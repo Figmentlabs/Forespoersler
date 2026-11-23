@@ -38,18 +38,27 @@ class ImapClient:
                 pass
             self._conn = None
 
-    def fetch_since(self, last_uid: int, max_fetch: int) -> list[FetchedMessage]:
-        """Hent meldinger med UID > last_uid (eldste først), opptil max_fetch."""
+    def fetch_since(
+        self, last_uid: int, max_fetch: int, since_date: str | None = None
+    ) -> list[FetchedMessage]:
+        """Hent meldinger med UID > last_uid, NYESTE FØRST, opptil max_fetch.
+
+        since_date (IMAP-format 'DD-Mon-YYYY') begrenser til meldinger mottatt
+        på eller etter den datoen — brukes for å kun polle inneværende dag.
+        """
         assert self._conn is not None
-        # UID SEARCH med intervall (last_uid+1):* — '*' er høyeste UID i mappen.
         start = last_uid + 1
-        typ, data = self._conn.uid("search", None, f"UID {start}:*")
+        criteria = f"UID {start}:*"
+        if since_date:
+            criteria = f"SINCE {since_date} {criteria}"
+        typ, data = self._conn.uid("search", None, criteria)
         if typ != "OK" or not data or not data[0]:
             return []
 
         uids = [int(x) for x in data[0].split()]
         # IMAP kan returnere den høyeste meldingen selv om ingen er > last_uid.
-        uids = sorted(u for u in uids if u >= start)
+        # Nyeste først (synkende UID).
+        uids = sorted((u for u in uids if u >= start), reverse=True)
         if not uids:
             return []
         uids = uids[:max_fetch]

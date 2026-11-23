@@ -2,8 +2,8 @@ name: Poll brokerforespørsler
 
 on:
   schedule:
-    # Hvert 15. minutt (UTC). Juster ved behov.
-    - cron: "*/15 * * * *"
+    # Hvert 5. minutt (UTC).
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 jobs:

@@ -16,7 +16,17 @@ import hashlib
 import logging
 import re
 import sys
+from datetime import date
 from pathlib import Path
+
+# IMAP krever engelske måneds-forkortelser uansett systemspråk.
+_IMAP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def imap_today() -> str:
+    t = date.today()
+    return f"{t.day:02d}-{_IMAP_MONTHS[t.month - 1]}-{t.year}"
 
 # Last .env fra prosjektroten automatisk, så kjøring ikke krever `source .env`.
 try:
@@ -121,11 +131,12 @@ def process_account(
     key = f"{acc.email}:{acc.mailbox}"
     last_uid = store.get_last_uid(key)
     account_id = store.inbox_account_id(acc.email)
-    log.info("[%s] starter fra UID > %s", acc.email, last_uid)
+    since = imap_today()
+    log.info("[%s] starter fra UID > %s, kun i dag (SINCE %s)", acc.email, last_uid, since)
 
     with ImapClient(acc.host, acc.port, acc.user, acc.password, acc.mailbox) as imap:
-        messages = imap.fetch_since(last_uid, cfg.max_fetch)
-    log.info("[%s] hentet %d melding(er)", acc.email, len(messages))
+        messages = imap.fetch_since(last_uid, cfg.max_fetch, since_date=since)
+    log.info("[%s] hentet %d melding(er) (nyeste først)", acc.email, len(messages))
 
     processed = 0
     highest = last_uid
