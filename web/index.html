@@ -275,7 +275,17 @@ const SUPABASE_URL = "https://wocrhuiyzrckxihqzrla.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndvY3JodWl5enJja3hpaHF6cmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU0NDE3NDcsImV4cCI6MjExMTAxNzc0N30.CKXkBswIQlHXIM3U3LkbnVuUwDQvRxhZR1O9fwHdKqM";
 const ALLOWED_DOMAINS = ["figment.no", "sonat.no"];
 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+// lock: passthrough deaktiverer Web Locks API, som kan få getSession til å
+// henge for alltid i enkelte nettlesere/kontekster (kjent supabase-js-problem).
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: "pkce",
+    lock: (_name, _acquireTimeout, fn) => fn(),
+  },
+});
 
 const REL = {
   svak:{label:"Svak",n:1,col:"var(--pill)"}, middels:{label:"Middels",n:2,col:"var(--amber)"},
