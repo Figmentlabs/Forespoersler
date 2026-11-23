@@ -1,0 +1,163 @@
+"""Alt databasearbeid mot Supabase (Postgres + Storage).
+
+Bruker service_role-nøkkelen og omgår RLS. Kjøres kun server-side.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from supabase import Client, create_client
+
+
+class Store:
+    def __init__(self, url: str, key: str, bucket: str):
+        self.client: Client = create_client(url, key)
+        self.bucket = bucket
+
+    # --- Oppslag ---
+    def service_areas(self) -> list[dict[str, Any]]:
+        res = (
+            self.client.table("service_areas")
+            .select("id, key, name, description, subitems")
+            .eq("active", True)
+            .order("sort_order")
+            .execute()
+        )
+        return res.data or []
+
+    def consultants(self) -> list[dict[str, Any]]:
+        res = (
+            self.client.table("consultants")
+            .select("id, name, title, skills, summary")
+            .eq("available", True)
+            .execute()
+        )
+        return res.data or []
+
+    def sender_domains(self) -> set[str]:
+        res = (
+            self.client.table("sender_domains")
+            .select("domain")
+            .eq("active", True)
+            .execute()
+        )
+        return {d["domain"].lower() for d in (res.data or [])}
+
+    def inbox_account_id(self, email: str) -> str | None:
+        res = (
+            self.client.table("inbox_accounts")
+            .select("id")
+            .eq("email", email)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0]["id"] if res.data else None
+
+    def touch_account(self, email: str) -> None:
+        self.client.table("inbox_accounts").update(
+            {"last_sync": datetime.now(timezone.utc).isoformat()}
+        ).eq("email", email).execute()
+
+    # --- Tilstand (siste UID per konto+mappe) ---
+    def get_last_uid(self, mailbox: str) -> int:
+        res = (
+            self.client.table("ingest_state")
+            .select("last_uid")
+            .eq("mailbox", mailbox)
+            .limit(1)
+            .execute()
+        )
+        return int(res.data[0]["last_uid"]) if res.data else 0
+
+    def set_last_uid(self, mailbox: str, last_uid: int) -> None:
+        self.client.table("ingest_state").upsert(
+            {
+                "mailbox": mailbox,
+                "last_uid": last_uid,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="mailbox",
+        ).execute()
+
+    # --- Dublettkontroll ---
+    def request_exists(self, message_id: str | None, content_hash: str | None) -> bool:
+        if message_id:
+            r = (
+                self.client.table("requests")
+                .select("id")
+                .eq("message_id", message_id)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                return True
+        if content_hash:
+            r = (
+                self.client.table("requests")
+                .select("id")
+                .eq("content_hash", content_hash)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                return True
+        return False
+
+    # --- Skriv ---
+    def insert_request(self, payload: dict[str, Any]) -> str | None:
+        res = self.client.table("requests").insert(payload).execute()
+        return res.data[0]["id"] if res.data else None
+
+    def update_request_scoring(
+        self, request_id: str, best_area_id: str | None, total_score: int
+    ) -> None:
+        self.client.table("requests").update(
+            {
+                "best_area_id": best_area_id,
+                "total_score": total_score,
+                "scored_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", request_id).execute()
+
+    def mark_request_error(self, request_id: str) -> None:
+        self.client.table("requests").update({"status": "feil"}).eq(
+            "id", request_id
+        ).execute()
+
+    def insert_match_scores(self, rows: list[dict[str, Any]]) -> None:
+        if rows:
+            self.client.table("match_scores").upsert(
+                rows, on_conflict="request_id,service_area_id"
+            ).execute()
+
+    def insert_consultant_matches(self, rows: list[dict[str, Any]]) -> None:
+        if rows:
+            self.client.table("consultant_matches").upsert(
+                rows, on_conflict="request_id,consultant_id"
+            ).execute()
+
+    # --- Vedlegg ---
+    def upload_attachment(
+        self, request_id: str, filename: str, content_type: str, data: bytes
+    ) -> str:
+        path = f"{request_id}/{filename}"
+        self.client.storage.from_(self.bucket).upload(
+            path,
+            data,
+            {"content-type": content_type or "application/octet-stream", "upsert": "true"},
+        )
+        return path
+
+    def insert_attachment(
+        self, request_id: str, filename: str, content_type: str, size: int, path: str
+    ) -> None:
+        self.client.table("attachments").insert(
+            {
+                "request_id": request_id,
+                "filename": filename,
+                "content_type": content_type,
+                "size_bytes": size,
+                "storage_path": path,
+            }
+        ).execute()

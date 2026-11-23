@@ -1,0 +1,183 @@
+"""LLM-basert match: tjenesteområder + konsulenter, i ett kall.
+
+Claude leser emne + brødtekst og gir:
+  - score (0–100) + begrunnelse per tjenesteområde, beste område, totalscore
+  - match (0–100) + begrunnelse per konsulent (mot masterCV)
+Strukturert output (json_schema) sikrer gyldig JSON.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
+import anthropic
+
+MAX_BODY_CHARS = 8000
+
+SYSTEM_PROMPT = """Du er analytiker hos konsulentselskapet Figment (del av Sonatgruppen).
+Du vurderer innkomne oppdragsforespørsler fra brokere mot (1) Figments \
+tjenesteområder og (2) aktuelle konsulenter.
+
+For hvert tjenesteområde: gi en score 0–100 for hvor godt oppdraget passer, med kort \
+begrunnelse på norsk. Vær nøktern – høy score kun ved tydelig match. Sett total_score \
+til hvor relevant oppdraget er for Figment samlet (typisk høyeste områdescore), og \
+best_area_key til beste område.
+
+For hver konsulent: gi en match 0–100 for hvor godt konsulenten passer oppdraget, \
+basert på rolle, ferdigheter og erfaring i masterCV-en, med kort, faktabasert \
+begrunnelse (bruk fornavn, ingen selgende prosa)."""
+
+
+@dataclass
+class AreaScore:
+    area_key: str
+    score: int
+    reasoning: str
+
+
+@dataclass
+class ConsultantScore:
+    consultant_id: str
+    match: int
+    reasoning: str
+
+
+@dataclass
+class ScoringResult:
+    scores: list[AreaScore]
+    best_area_key: str
+    total_score: int
+    consultants: list[ConsultantScore] = field(default_factory=list)
+    summary: str = ""
+
+
+def _areas_block(areas: list[dict[str, Any]]) -> str:
+    out = []
+    for a in areas:
+        subs = ", ".join(a.get("subitems") or [])
+        out.append(
+            f"- nøkkel: {a['key']}\n  navn: {a['name']}\n"
+            f"  beskrivelse: {a['description']}\n  underpunkter: {subs}"
+        )
+    return "\n".join(out)
+
+
+def _cons_block(cons: list[dict[str, Any]]) -> str:
+    out = []
+    for c in cons:
+        skills = ", ".join(c.get("skills") or [])
+        out.append(
+            f"- id: {c['id']}\n  navn: {c['name']}\n  rolle: {c.get('title','')}\n"
+            f"  ferdigheter: {skills}\n  sammendrag: {c.get('summary','')}"
+        )
+    return "\n".join(out)
+
+
+def _schema(area_keys: list[str], cons_ids: list[str]) -> dict[str, Any]:
+    props: dict[str, Any] = {
+        "scores": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "area_key": {"type": "string", "enum": area_keys},
+                    "score": {"type": "integer"},
+                    "reasoning": {"type": "string"},
+                },
+                "required": ["area_key", "score", "reasoning"],
+                "additionalProperties": False,
+            },
+        },
+        "best_area_key": {"type": "string", "enum": area_keys},
+        "total_score": {"type": "integer"},
+        "summary": {"type": "string"},
+    }
+    required = ["scores", "best_area_key", "total_score", "summary"]
+    if cons_ids:
+        props["consultants"] = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "consultant_id": {"type": "string", "enum": cons_ids},
+                    "match": {"type": "integer"},
+                    "reasoning": {"type": "string"},
+                },
+                "required": ["consultant_id", "match", "reasoning"],
+                "additionalProperties": False,
+            },
+        }
+        required.append("consultants")
+    return {
+        "type": "json_schema",
+        "schema": {
+            "type": "object",
+            "properties": props,
+            "required": required,
+            "additionalProperties": False,
+        },
+    }
+
+
+class Scorer:
+    def __init__(self, api_key: str, model: str):
+        self.client = anthropic.Anthropic(api_key=api_key)
+        self.model = model
+
+    def score(
+        self,
+        areas: list[dict[str, Any]],
+        consultants: list[dict[str, Any]],
+        subject: str,
+        body_text: str,
+    ) -> ScoringResult:
+        area_keys = [a["key"] for a in areas]
+        cons_ids = [c["id"] for c in consultants]
+        body = (body_text or "")[:MAX_BODY_CHARS]
+
+        parts = [
+            "Figments tjenesteområder:",
+            _areas_block(areas),
+            "",
+        ]
+        if consultants:
+            parts += ["Aktuelle konsulenter:", _cons_block(consultants), ""]
+        parts += [
+            "Innkommen forespørsel:",
+            f"Emne: {subject}",
+            "",
+            f"Tekst:\n{body}",
+            "",
+            "Score HVERT tjenesteområde"
+            + (" og HVER konsulent." if consultants else "."),
+        ]
+        user_content = "\n".join(parts)
+
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=3000,
+            system=SYSTEM_PROMPT,
+            output_config={"effort": "low", "format": _schema(area_keys, cons_ids)},
+            messages=[{"role": "user", "content": user_content}],
+        )
+        text = next((b.text for b in response.content if b.type == "text"), None)
+        if not text:
+            raise RuntimeError("Scoring ga ingen tekstrespons")
+        data = json.loads(text)
+
+        scores = [
+            AreaScore(s["area_key"], int(s["score"]), s.get("reasoning", ""))
+            for s in data["scores"]
+        ]
+        cons = [
+            ConsultantScore(c["consultant_id"], int(c["match"]), c.get("reasoning", ""))
+            for c in data.get("consultants", [])
+        ]
+        return ScoringResult(
+            scores=scores,
+            best_area_key=data["best_area_key"],
+            total_score=int(data["total_score"]),
+            consultants=cons,
+            summary=data.get("summary", ""),
+        )

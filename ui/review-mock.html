@@ -1,0 +1,808 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Brokerforespørsler</title>
+<style>
+/* Layout: Figment-innlogging (tilgangsport) → app med topplinje, to visninger
+   (Forespørsler / Innstillinger). Forespørsler: lokasjonsfilter + statusfaner +
+   liste/detalj. Stil fra figment.no: Barlow, #252231, lyseblå #EAF7FD, grønn/lilla,
+   pill-knapper, 6px kort. Bevisst lys. */
+:root{
+  color-scheme:light;
+  --bg:#FFFFFF; --fg:#252231; --muted:#6B6878; --soft:#4A4757; --text:#3A3746;
+  --line:#E6E5EA; --line-strong:#252231; --surface:#F5F5F7; --ph:#EEEDF1; --pill:#CFCDD6;
+  --inv-bg:#252231; --inv-fg:#FFFFFF; --inv-muted:#B9B6C4; --inv-soft:#DAD8E2;
+  --hl:#EAF7FD; --green:#9ABE8F; --purple:#78729D; --amber:#C9A14A; --red:#C17D7D;
+  --font-display:'Barlow','Helvetica Neue',Arial,sans-serif;
+  --font-body:'Barlow',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:16px;line-height:1.5}
+h1,h2,h3,h4{margin:0;font-family:var(--font-display);letter-spacing:-0.02em;text-wrap:balance}
+p{margin:0}
+button{font:inherit;cursor:pointer}
+input{font:inherit}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bg);z-index:30}
+.gutter{padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+.wordmark{font-family:var(--font-display);font-weight:600;letter-spacing:-0.02em;line-height:1}
+.wordmark .bf{position:relative;z-index:0}
+.wordmark .bf::before{content:"";position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);border-radius:50%;background:var(--green);z-index:-1}
+
+/* Tilgangsport (Figment-innlogging) */
+.gate{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;padding:24px;z-index:80}
+.gatecard{max-width:420px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px}
+.gatecard .wordmark{font-size:30px}
+.gatecard .wordmark .bf::before{width:34px;height:34px}
+.gatecard h1{font-size:26px;font-weight:600;margin-top:4px}
+.gatecard p{color:var(--soft);font-size:15px;max-width:340px}
+.spinner{width:26px;height:26px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--fg);animation:spin .8s linear infinite;margin-top:4px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+
+/* Topplinje */
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+.topbar-in{display:flex;align-items:center;gap:14px 20px;padding-block:14px;flex-wrap:wrap}
+.brand{display:inline-flex;align-items:center;gap:14px}
+.brand .wordmark{font-size:20px}
+.brand .wordmark .bf::before{width:22px;height:22px}
+.brand .divider{width:1px;height:22px;background:var(--line-strong);opacity:.25}
+.brand .app{font-weight:500;font-size:15px;color:var(--soft)}
+.viewnav{display:flex;gap:4px}
+.viewnav button{min-height:36px;padding:0 14px;border-radius:999px;border:0;background:transparent;color:var(--soft);font-size:14.5px;font-weight:500}
+.viewnav button[aria-current="true"]{background:var(--surface);color:var(--fg)}
+.topbar .spacer{flex:1}
+.mockflag{font-size:12px;font-weight:500;color:var(--soft);background:var(--hl);border-radius:999px;padding:6px 11px}
+.userchip{display:inline-flex;align-items:center;gap:9px}
+.userchip .uava{width:30px;height:30px;border-radius:50%;object-fit:cover;background:var(--ph)}
+.userchip .uname{font-size:14px;font-weight:600}
+.userchip .urole{font-size:11.5px;color:var(--muted)}
+
+/* Lokasjonsfilter */
+.locfilter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:18px}
+.locfilter .lbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.locchips{display:flex;gap:6px;flex-wrap:wrap}
+.locchip{min-height:34px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--soft);font-size:13.5px;font-weight:500;display:inline-flex;align-items:center;gap:7px}
+.locchip:hover{border-color:var(--pill)}
+.locchip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.locchip .cnt{opacity:.65;font-variant-numeric:tabular-nums}
+.locclear{border:0;background:transparent;color:var(--muted);font-size:13px;text-decoration:underline;text-underline-offset:2px}
+
+/* Verktøylinje */
+.toolbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding-block:16px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:0 15px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--soft);font-size:14px;font-weight:500}
+.tab:hover{border-color:var(--pill)}
+.tab[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tab .cnt{font-variant-numeric:tabular-nums;opacity:.7}
+.toolbar .spacer{flex:1}
+.sortnote{font-size:13.5px;color:var(--muted)}
+
+/* Hovedoppsett */
+.layout{display:grid;grid-template-columns:minmax(330px,390px) minmax(0,1fr);gap:28px;padding-bottom:64px;align-items:start}
+@media (max-width:860px){.layout{grid-template-columns:1fr;gap:20px}}
+
+/* Liste */
+.list{display:flex;flex-direction:column;gap:12px;min-width:0}
+.card{border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:16px;text-align:left;width:100%;transition:border-color 120ms,box-shadow 120ms}
+.card:hover{border-color:var(--pill)}
+button.item[aria-current="true"]{border-color:var(--fg);box-shadow:0 0 0 1px var(--fg)}
+.item .eyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.item h3{font-size:17.5px;font-weight:600;line-height:1.25;margin:6px 0 10px}
+.item .meta{font-size:13px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+.item .foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}
+.bestmatch{display:flex;align-items:baseline;gap:8px;min-width:0}
+.bestmatch .pct{font-family:var(--font-display);font-weight:600;font-size:20px;letter-spacing:-0.02em;font-variant-numeric:tabular-nums}
+.bestmatch .nm{font-size:12.5px;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .subrow{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.item .sep{opacity:.5}
+
+/* Statuschip */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.chip.ny{color:#2d6ea8;background:var(--hl)}
+.chip.kvalifisert{color:#3f7a35;background:#eaf4e6}
+.chip.avvist{color:#8a4b4b;background:#f4ebeb}
+
+/* Anbefaling */
+.rec-pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.rec-kvalifiser{color:#3f7a35;background:#eaf4e6}
+.rec-vurder{color:#8a6d1f;background:#f6f0dd}
+.rec-avvis{color:#8a4b4b;background:#f4ebeb}
+
+/* Styrkemåler (relasjon) */
+.meter{display:inline-flex;gap:3px;align-items:center}
+.meter i{width:16px;height:5px;border-radius:2px;background:var(--surface)}
+.meter.big i{width:22px;height:7px}
+.meter i.on{background:var(--rc,var(--pill))}
+
+/* Detalj */
+.detail{border:1px solid var(--line);border-radius:10px;min-width:0;overflow:hidden}
+.detail-hd{padding:24px;border-bottom:1px solid var(--line)}
+.detail-hd .eyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.detail-hd h2{font-size:clamp(22px,2.6vw,30px);font-weight:600;line-height:1.1;margin:8px 0 0}
+.detail-hd .hdrow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.kv{display:flex;flex-wrap:wrap;gap:6px 26px;margin-top:16px;font-size:13.5px;color:var(--soft)}
+.kv b{color:var(--fg);font-weight:600}
+
+/* Anbefalingsbanner */
+.recbanner{display:flex;flex-wrap:wrap;gap:10px 18px;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--line);border-left:4px solid var(--rcol)}
+.recmain{min-width:0}
+.recverdict{font-family:var(--font-display);font-weight:600;font-size:17px;color:var(--rcol)}
+.recwhy{font-size:13.5px;color:var(--soft);margin-top:3px}
+.recfactors{display:flex;flex-wrap:wrap;gap:7px}
+.fac{font-size:12px;border-radius:999px;padding:4px 10px;background:var(--surface);color:var(--soft)}
+.fac b{font-weight:600}
+.fac.good{background:#eaf4e6;color:#3f7a35} .fac.mid{background:#f6f0dd;color:#8a6d1f} .fac.bad{background:#f4ebeb;color:#8a4b4b}
+
+.section{padding:24px;border-bottom:1px solid var(--line)}
+.section:last-child{border-bottom:0}
+.section h4{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:16px}
+.email{background:var(--surface);border-radius:8px;padding:18px;font-size:14.5px;color:var(--text);line-height:1.6;white-space:pre-wrap}
+.attachments{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.att{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--soft);border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+.att svg{width:14px;height:14px}
+
+/* Foretak + relasjon */
+.org{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.org .nm{font-weight:600;font-size:16px}
+.org .org-meta{font-size:13px;color:var(--muted);margin-top:3px}
+.pdlink{font-size:13px;font-weight:500;color:var(--fg);border-bottom:1px solid var(--fg);padding-bottom:1px;white-space:nowrap}
+.contacts{margin-top:8px}
+.contact{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
+.contact .ava{width:36px;height:36px;border-radius:50%;background:var(--ph);display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--soft);flex:0 0 auto}
+.contact .who{min-width:0}
+.contact .nm{font-weight:600;font-size:14.5px}
+.contact .ro{font-size:12.5px;color:var(--muted)}
+.contact .ct{font-size:12.5px;color:var(--soft);margin-left:auto;text-align:right;white-space:nowrap}
+.relbox{margin-top:18px;background:var(--surface);border-radius:8px;padding:16px}
+.relhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.relbadge{font-family:var(--font-display);font-weight:600;font-size:17px;display:inline-flex;align-items:center;gap:9px}
+.signals{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.sig{font-size:12.5px;color:var(--soft);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+.sig b{color:var(--fg);font-weight:600}
+.relwhy{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.5}
+
+/* Tjenestematch */
+.svc-row{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:14px 0;border-top:1px solid var(--line)}
+.svc-row:first-of-type{border-top:0}
+.svc-name{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}
+.svc-name .star{font-size:12px;color:var(--soft);font-weight:500}
+.svc-name mark{background:var(--hl);padding:1px 6px;border-radius:3px}
+.svc-pct{font-family:var(--font-display);font-weight:600;font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:-0.01em;align-self:center}
+.bar{grid-column:1 / -1;height:8px;background:var(--surface);border-radius:999px;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:999px}
+.svc-why{grid-column:1 / -1;font-size:13px;color:var(--muted);margin-top:2px}
+.tier-strong{background:var(--green)} .tier-med{background:var(--purple)} .tier-low{background:var(--pill)}
+.txt-strong{color:#3f7a35} .txt-med{color:var(--purple)} .txt-low{color:var(--muted)}
+
+/* Konsulentmatch */
+.cons{display:flex;flex-direction:column;gap:12px}
+.cons-card{border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.cons-top{display:flex;align-items:center;gap:14px}
+.ring{position:relative;width:48px;height:48px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center}
+.ring::after{content:"";position:absolute;inset:6px;background:var(--bg);border-radius:50%}
+.ring b{position:relative;z-index:1;font-family:var(--font-display);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.cons-id{flex:1;min-width:0}
+.cons-id .nm{font-weight:600;font-size:15.5px}
+.cons-id .ttl{font-size:13px;color:var(--muted)}
+.cons-why{font-size:13.5px;color:var(--text);margin-top:10px;line-height:1.5}
+.cons-more{margin-top:10px;font-size:13px}
+.cons-more summary{cursor:pointer;color:var(--soft);font-weight:500;list-style:none}
+.cons-more summary::-webkit-details-marker{display:none}
+.cons-more summary::before{content:"CV  ▸ ";font-weight:600}
+.cons-more[open] summary::before{content:"CV  ▾ "}
+.cv{margin-top:10px;background:var(--surface);border-radius:8px;padding:14px;font-size:13px;color:var(--text);line-height:1.55}
+.cv .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.cv .tag{font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--soft)}
+
+/* Handlinger */
+.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 24px;border-radius:999px;font-weight:600;font-size:15px;border:1px solid transparent}
+.btn-primary{background:var(--fg);color:var(--bg)}
+.btn-primary:hover{opacity:.88}
+.btn-ghost{background:var(--bg);color:var(--fg);border-color:var(--line-strong)}
+.btn-ghost:hover{background:var(--surface)}
+.btn-sm{min-height:40px;padding:0 16px;font-size:14px}
+.resolved{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--soft)}
+.resolved a{color:var(--fg)}
+
+/* Innstillinger */
+.settings{max-width:760px;padding-bottom:64px;display:flex;flex-direction:column;gap:20px}
+.panel{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.panel-hd{padding:18px 20px;border-bottom:1px solid var(--line)}
+.panel-hd h3{font-size:18px;font-weight:600}
+.panel-hd p{font-size:13.5px;color:var(--muted);margin-top:4px}
+.panel-bd{padding:8px 20px 18px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .main{min-width:0}
+.row .t{font-weight:600;font-size:14.5px}
+.row .s{font-size:12.5px;color:var(--muted)}
+.row .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.statusdot{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--soft)}
+.statusdot::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green)}
+.x{border:0;background:transparent;color:var(--muted);font-size:18px;line-height:1;padding:4px 6px;border-radius:6px}
+.x:hover{background:var(--surface);color:var(--fg)}
+.addform{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.addform input{min-height:40px;padding:0 12px;border:1px solid var(--line);border-radius:8px;flex:1 1 150px;min-width:0}
+.dedup ul{margin:8px 0 0;padding-left:18px;color:var(--text);font-size:13.5px;line-height:1.6}
+.statbig{font-family:var(--font-display);font-weight:600;font-size:30px;letter-spacing:-0.02em}
+.toggle{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;color:var(--soft)}
+
+/* Modal + toast */
+.scrim{position:fixed;inset:0;background:rgba(37,34,49,.42);display:grid;place-items:center;padding:24px;z-index:50}
+.modal{background:var(--bg);border-radius:12px;max-width:560px;width:100%;max-height:86vh;overflow:auto;box-shadow:0 24px 60px rgba(37,34,49,.28)}
+.modal-hd{padding:22px 24px;border-bottom:1px solid var(--line)}
+.modal-hd .eyebrow{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.modal-hd h3{font-size:22px;font-weight:600;margin-top:6px}
+.modal-bd{padding:22px 24px;display:flex;flex-direction:column;gap:16px}
+.deal{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.deal-row{display:flex;gap:16px;justify-content:space-between;padding:11px 16px;border-top:1px solid var(--line);font-size:14px}
+.deal-row:first-child{border-top:0}
+.deal-row .k{color:var(--muted)}
+.deal-row .v{font-weight:600;text-align:right}
+.pipe{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--soft)}
+.pipe .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+.note{background:var(--surface);border-radius:8px;padding:14px;font-size:13.5px;color:var(--text);line-height:1.55}
+.field label{display:block;font-size:13px;color:var(--soft);margin-bottom:6px;font-weight:500}
+.field textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;font-size:14px;resize:vertical;min-height:72px}
+.modal-ft{padding:18px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--inv-bg);color:var(--inv-fg);padding:13px 20px;border-radius:999px;font-size:14px;font-weight:500;z-index:60;box-shadow:0 12px 30px rgba(37,34,49,.3)}
+
+.empty{padding:60px 24px;text-align:center;color:var(--muted)}
+.lowbanner{display:flex;gap:10px;align-items:center;background:#f6f1ea;border:1px solid #ecdfca;color:#8a6d3b;border-radius:8px;padding:12px 14px;font-size:13.5px;margin-top:4px}
+</style>
+
+<!-- Tilgangsport: Figment-innlogging -->
+<div class="gate" id="gate">
+  <div class="gatecard">
+    <div class="wordmark"><span class="bf">f</span>igment</div>
+    <h1>Brokerforespørsler</h1>
+    <p id="gatemsg">Kobler til Figment …</p>
+    <div class="spinner" id="gatespin"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="topbar-in gutter">
+      <span class="brand">
+        <span class="wordmark"><span class="bf">f</span>igment</span>
+        <span class="divider"></span>
+        <span class="app">Brokerforespørsler</span>
+      </span>
+      <nav class="viewnav" id="viewnav">
+        <button data-view="requests" aria-current="true">Forespørsler</button>
+        <button data-view="settings" aria-current="false">Innstillinger</button>
+      </nav>
+      <span class="spacer"></span>
+      <span class="mockflag">Eksempeldata</span>
+      <span class="userchip" id="userchip" hidden>
+        <img class="uava" id="uava" alt="">
+        <span><span class="uname" id="uname"></span><br><span class="urole" id="urole"></span></span>
+      </span>
+    </div>
+  </header>
+
+  <div class="gutter" id="viewRequests">
+    <div class="locfilter">
+      <span class="lbl">Lokasjon</span>
+      <div class="locchips" id="locchips"></div>
+      <button class="locclear" id="locclear" hidden>Nullstill</button>
+    </div>
+    <div class="toolbar">
+      <div class="tabs" id="tabs" role="group" aria-label="Filtrer på status"></div>
+      <span class="spacer"></span>
+      <span class="sortnote">Sortert på matchscore</span>
+    </div>
+    <div class="layout">
+      <div class="list" id="list" role="list"></div>
+      <div id="detailWrap"></div>
+    </div>
+  </div>
+
+  <div class="gutter" id="viewSettings" hidden>
+    <div class="settings" id="settingsBody"></div>
+  </div>
+</div>
+
+<div id="modalMount"></div>
+<div id="toastMount" aria-live="polite"></div>
+
+<script>
+// ---------- Mock-data ----------
+const SERVICE_AREAS = [
+  {key:'strategi_arkitektur', name:'Strategi og arkitektur'},
+  {key:'endringsledelse_prosessledelse', name:'Endringsledelse og prosessledelse'},
+  {key:'ki_forbedring', name:'KI og forbedring'},
+  {key:'prosjektledelse', name:'Prosjektledelse'},
+];
+const AREA_NAME = Object.fromEntries(SERVICE_AREAS.map(a=>[a.key,a.name]));
+
+const CONSULTANTS = {
+  lise:  {name:'Lise Haugen',  title:'Seniorrådgiver endringsledelse', loc:'Oslo',   years:18, skills:['Endringsledelse','Prosessledelse','Produktledelse','Fasilitering'], certs:['Prince2','Google Design Sprint 2.0'], cv:'Lise har 18 års erfaring med endrings- og prosessledelse i offentlig sektor. Hun har ledet innføringsløp hos KS Digital og Sammen, og fasiliterer arbeidsmøter etter Design Sprint-metodikk.'},
+  anders:{name:'Anders Moen',  title:'Løsningsarkitekt', loc:'Bergen', years:14, skills:['Virksomhetsarkitektur','Dataplattform','Løsningsarkitektur','Integrasjon'], certs:['TOGAF 9'], cv:'Anders har 14 års erfaring som arkitekt. Han har utarbeidet målarkitektur for dataplattform hos Fiskeridirektoratet og løsningsarkitektur hos Helse Vest IKT.'},
+  kari:  {name:'Kari Nordbø',  title:'Prosjektleder', loc:'Oslo', years:20, skills:['Prosjektledelse','Gevinstrealisering','Smidig','Test og produksjonssetting'], certs:['PMP','Prince2','SAFe'], cv:'Kari har 20 års erfaring som prosjektleder. Hun ledet utviklings- og migreringsarbeid på Helseplattformen og innføring med gevinstrealisering hos KS Digital.'},
+  jonas: {name:'Jonas Eide',   title:'KI-rådgiver', loc:'Oslo', years:10, skills:['KI-governance','Prosessautomatisering','Dataplattform','Prosesskartlegging'], certs:['Azure AI Engineer'], cv:'Jonas har 10 års erfaring med data og automatisering. Han etablerte rammeverk for styring av automatiserte prosesser hos Felleskjøpet og har jobbet med KI-drevne løsninger hos Wattif EV.'},
+  mette: {name:'Mette Solberg', title:'Seniorrådgiver anskaffelser', loc:'Bergen', years:16, skills:['Anskaffelsesstøtte','Kravspesifikasjon','Leverandørstyring','Behovskartlegging'], certs:['Offentlige anskaffelser (NITO)'], cv:'Mette har 16 års erfaring med offentlige anskaffelser. Hun har ledet kravspesifikasjon og leverandørstyring for fagsystemanskaffelser i flere statlige virksomheter.'},
+};
+
+const REL = {
+  svak:         {label:'Svak',         n:1, col:'var(--pill)'},
+  middels:      {label:'Middels',      n:2, col:'var(--amber)'},
+  sterk:        {label:'Sterk',        n:3, col:'var(--purple)'},
+  veldig_sterk: {label:'Veldig sterk', n:4, col:'var(--green)'},
+};
+const REC = {
+  kvalifiser:{label:'Kvalifiser', col:'#3f7a35', pill:'rec-kvalifiser'},
+  vurder:    {label:'Vurder',     col:'#8a6d1f', pill:'rec-vurder'},
+  avvis:     {label:'Avvis',      col:'#8a4b4b', pill:'rec-avvis'},
+};
+const LOCATIONS = ['Oslo','Bergen','Trondheim','Remote','Hybrid'];
+const OFFICE = ['Oslo','Bergen'];
+
+const REQUESTS = [
+  {
+    id:'r1', broker:'Experis', from:'oppdrag@experis.no', to:'broker@figment.no',
+    subject:'Senior prosjektleder – migrering til Helseplattformen',
+    received:'2026-11-23 08:41', loc:'Trondheim / hybrid', locations:['Trondheim','Hybrid'], deadline:'2026-12-05', status:'ny',
+    org:{name:'Experis', pdId:43, industry:'Bemanning / broker', address:'Ranheimsvegen 9, 7044 Trondheim', real:true},
+    contacts:[{name:'Johannes Birkelund', role:'Resource Manager', email:'johannes.birkelund@no.experis.com', phone:'—'}],
+    rel:{level:'svak', real:true, sig:{deals:0, won:0, activities:0, emails:0, contacts:2, last:'ingen logget'},
+         why:'Experis ligger inne som foretak med to kontakter, men vi har ingen dealer, møter eller e-postdialog logget. Ekte tall fra Pipedrive.'},
+    body:`Hei,\n\nVi søker en senior prosjektleder til et migreringsprosjekt hos en av våre kunder i helsesektoren. Oppdraget gjelder planlegging og gjennomføring av migrering til Helseplattformen, med ansvar for fremdrift, risiko og leveranser.\n\nVarighet: 12 måneder, oppstart januar. 80–100 %. Krav om minimum 10 års erfaring som prosjektleder og erfaring fra store offentlige virksomheter.\n\nFrist for CV: 5. desember.\n\nMvh\nExperis`,
+    attachments:['Oppdragsbeskrivelse.pdf'],
+    scores:{prosjektledelse:[92,'Tydelig prosjektlederoppdrag med ansvar for fremdrift, risiko og leveranser – kjernen i området.'],
+            endringsledelse_prosessledelse:[61,'Migrering og innføring berører endringsledelse, men er ikke hovedfokus.'],
+            strategi_arkitektur:[28,'Noe arkitekturforståelse nyttig, men ikke etterspurt.'],
+            ki_forbedring:[12,'Ingen KI- eller automatiseringskomponent.']},
+    cons:[['kari',94,'Kari ledet utviklings- og migreringsarbeid på Helseplattformen og har 20 års erfaring som prosjektleder. Hun er sertifisert PMP og Prince2.'],
+          ['lise',58,'Lise har erfaring med innføringsløp i offentlig sektor, men profilen er rettet mot endringsledelse mer enn ren prosjektledelse.'],
+          ['anders',30,'Anders er arkitekt, ikke prosjektleder; begrenset match mot rollen.']]
+  },
+  {
+    id:'r2', broker:'Ework Group', from:'konsulent@eworkgroup.com', to:'broker@figment.no',
+    subject:'Virksomhetsarkitekt – målarkitektur for ny dataplattform',
+    received:'2026-11-22 15:10', loc:'Oslo / hybrid', locations:['Oslo','Hybrid'], deadline:'2026-12-12', status:'ny',
+    org:{name:'Ework', pdId:1713, industry:'Konsulentformidler', address:'Oslo', real:true},
+    contacts:[{name:'Markedskontakt Ework', role:'Account Manager', email:'konsulent@eworkgroup.com', phone:'—'}],
+    rel:{level:'middels', real:true, sig:{deals:3, won:1, activities:2, emails:5, contacts:2, last:'9. nov 2026'},
+         why:'Vi har én vunnet avtale, tre dealer totalt og jevn dialog (5 e-poster, 2 møter, 4 notater) med Ework. Ekte tall fra Pipedrive.'},
+    body:`Hei,\n\nKunde i statlig sektor skal etablere en ny dataplattform og trenger en virksomhetsarkitekt til å utarbeide målarkitektur, prinsipper og veikart. Du vil jobbe tett med fagmiljø og ledelse, og gi beslutningsunderlag for videre valg.\n\nVarighet: 6 måneder med opsjon. Krav: TOGAF eller tilsvarende, erfaring med dataplattform og løsningsarkitektur.\n\nMvh\nEwork`,
+    attachments:[],
+    scores:{strategi_arkitektur:[90,'Målarkitektur, prinsipper, veikart og beslutningsunderlag treffer området direkte.'],
+            ki_forbedring:[55,'Dataplattform er et grunnlag for KI, delvis overlapp.'],
+            endringsledelse_prosessledelse:[34,'Forankring mot ledelse og fagmiljø, men ikke endringsledelse som sådan.'],
+            prosjektledelse:[30,'Rådgivningsoppdrag, ikke prosjektledelse.']},
+    cons:[['anders',93,'Anders har utarbeidet målarkitektur for dataplattform hos Fiskeridirektoratet og er sertifisert i TOGAF 9. 14 års erfaring som arkitekt.'],
+          ['jonas',60,'Jonas kjenner dataplattform fra KI-siden, men har ikke virksomhetsarkitektur som hovedfelt.'],
+          ['kari',32,'Kari er prosjektleder; arkitekturdybden er begrenset.']]
+  },
+  {
+    id:'r3', broker:'Witted', from:'assignments@witted.com', to:'oppdrag@figment.no',
+    subject:'KI-rådgiver – automatisering av saksbehandling',
+    received:'2026-11-22 09:55', loc:'Oslo / remote', locations:['Oslo','Remote'], deadline:'2026-12-01', status:'kvalifisert', dealId:'mock-10482',
+    org:{name:'Witted', pdId:null, industry:'Konsulentmarkedsplass', address:'Oslo'},
+    contacts:[{name:'Sourcing-team', role:'Talent Partner', email:'assignments@witted.com', phone:'—'}],
+    rel:{level:'svak', sig:{deals:0, won:0, activities:1, emails:2, contacts:1, last:'22. nov 2026'},
+         why:'Ny broker med lite historikk – første reelle forespørsel, kun en kort dialog så langt.'},
+    body:`Hi,\n\nOur client in the public sector wants to automate parts of their case handling and is looking for an AI advisor. The role covers mapping opportunities, establishing governance for automated processes, and supporting implementation.\n\nStart: ASAP. 6–9 months. Norwegian required.\n\nBest regards\nWitted`,
+    attachments:['Role_description.pdf','NDA.pdf'],
+    scores:{ki_forbedring:[94,'Kartlegging av muligheter, KI-governance og prosessautomatisering treffer området presist.'],
+            endringsledelse_prosessledelse:[52,'Innføring og prosessendring er en del av oppdraget.'],
+            strategi_arkitektur:[48,'Dataplattform-grunnlag berøres indirekte.'],
+            prosjektledelse:[33,'Noe leveranseansvar, men ikke prosjektledelse.']},
+    cons:[['jonas',95,'Jonas etablerte rammeverk for styring av rundt 1 000 automatiserte prosesser hos Felleskjøpet og har jobbet med KI-drevne løsninger hos Wattif EV. 10 års erfaring, Azure AI Engineer.'],
+          ['anders',52,'Anders kan dataplattform-grunnlaget, men ikke KI-governance.'],
+          ['lise',44,'Lise kan prosessledelse og innføring, men ikke KI spesifikt.']]
+  },
+  {
+    id:'r4', broker:'Brainville', from:'match@brainville.com', to:'broker@figment.no',
+    subject:'Endringsleder – innføring av nytt sak/arkiv-system',
+    received:'2026-11-21 13:20', loc:'Bergen', locations:['Bergen'], deadline:'2026-11-28', status:'ny',
+    org:{name:'Brainville', pdId:null, industry:'Konsulentmarkedsplass', address:'Oslo'},
+    contacts:[{name:'Per Kvam', role:'Partner Manager', email:'per.kvam@brainville.com', phone:'+47 400 00 000'},
+              {name:'Ingrid Dahl', role:'Account', email:'ingrid.dahl@brainville.com', phone:'—'}],
+    rel:{level:'sterk', sig:{deals:5, won:2, activities:9, emails:18, contacts:3, last:'for 3 dager siden'},
+         why:'Flere vunne avtaler, tett og nylig dialog (18 e-poster, 9 møter) og tre kjente kontakter gjør relasjonen sterk.'},
+    body:`Hei,\n\nVi trenger en erfaren endringsleder til innføring av nytt sak/arkiv-system hos en kommunal kunde. Ansvar for interessenthåndtering, opplæring og at organisasjonen tar løsningen i bruk.\n\nVarighet: 9 måneder, 60–80 %. Oppstart snarest. Frist for forslag: 28. november.\n\nMvh\nBrainville`,
+    attachments:['Kravprofil.pdf'],
+    scores:{endringsledelse_prosessledelse:[88,'Interessenthåndtering, opplæring og bruk i organisasjonen er ren endringsledelse.'],
+            prosjektledelse:[66,'Innføringen har et tydelig leveranse- og fremdriftsansvar.'],
+            strategi_arkitektur:[33,'Begrenset arkitekturinnhold.'],
+            ki_forbedring:[20,'Ingen KI-komponent.']},
+    cons:[['lise',90,'Lise har ledet innføringsløp hos KS Digital og Sammen og er sertifisert Prince2. 18 års erfaring med endringsledelse i offentlig sektor.'],
+          ['kari',70,'Kari kan innføring og gevinstrealisering, med vekt på prosjektledelse.'],
+          ['mette',55,'Mette kjenner offentlig sektor og fagsystemer, men mindre på ren endringsledelse.']]
+  },
+  {
+    id:'r5', broker:'Verama', from:'requests@verama.com', to:'oppdrag@figment.no',
+    subject:'Anskaffelsesrådgiver – kravspesifikasjon nytt fagsystem',
+    received:'2026-11-20 11:05', loc:'Oslo / hybrid', locations:['Oslo','Hybrid'], deadline:'2026-12-20', status:'ny',
+    org:{name:'Verama', pdId:null, industry:'Konsulentmarkedsplass', address:'Oslo'},
+    contacts:[{name:'Sofie Lund', role:'Key Account Manager', email:'sofie.lund@verama.com', phone:'+47 900 00 000'}],
+    rel:{level:'veldig_sterk', sig:{deals:11, won:4, activities:23, emails:46, contacts:5, last:'i går'},
+         why:'Langvarig samarbeid: fire vunne avtaler, elleve dealer totalt, fem kontakter og hyppig, helt fersk dialog.'},
+    body:`Hei,\n\nStatlig virksomhet skal anskaffe nytt fagsystem og søker en rådgiver til behovskartlegging, kravspesifikasjon og leverandøroppfølging gjennom anskaffelsen.\n\nVarighet: 8 måneder. Krav: erfaring med offentlige anskaffelser og kravspesifikasjon.\n\nMvh\nVerama`,
+    attachments:[],
+    scores:{endringsledelse_prosessledelse:[80,'Behovskartlegging, kravspesifikasjon og leverandøroppfølging ligger under anskaffelsesstøtte i området.'],
+            strategi_arkitektur:[45,'Noe utredning og beslutningsunderlag.'],
+            prosjektledelse:[40,'Anskaffelsesløp, men ikke prosjektledelse som rolle.'],
+            ki_forbedring:[15,'Ingen KI-komponent.']},
+    cons:[['mette',92,'Mette har 16 års erfaring med offentlige anskaffelser og har ledet kravspesifikasjon og leverandørstyring for fagsystemanskaffelser i statlige virksomheter.'],
+          ['lise',58,'Lise kan prosess og behovskartlegging, men anskaffelsesfaget er ikke hennes kjerne.'],
+          ['kari',50,'Kari kan leveranseoppfølging, men ikke anskaffelser spesielt.']]
+  },
+  {
+    id:'r6', broker:'Onsiter', from:'jobs@onsiter.com', to:'broker@figment.no',
+    subject:'Fullstack-utvikler React/Node (6 mnd)',
+    received:'2026-11-19 16:48', loc:'Remote', locations:['Remote'], deadline:'2026-11-30', status:'avvist', rejectReason:'Utenfor Figments tjenesteområder – ren utvikling.',
+    org:{name:'Onsiter', pdId:null, industry:'Konsulentmarkedsplass', address:'—'},
+    contacts:[{name:'Ukjent avsender', role:'—', email:'jobs@onsiter.com', phone:'—'}],
+    rel:{level:'svak', sig:{deals:0, won:0, activities:0, emails:1, contacts:1, last:'19. nov 2026'},
+         why:'Ukjent broker uten historikk hos oss.'},
+    body:`Hei,\n\nVi søker en fullstack-utvikler med React og Node.js til et produktteam. Du vil skrive kode, delta i code review og bygge nye features i et SaaS-produkt.\n\nVarighet: 6 måneder, 100 %. Oppstart snarest.\n\nMvh\nOnsiter`,
+    attachments:[],
+    low:true,
+    scores:{ki_forbedring:[22,'Teknisk produktarbeid, men ingen KI- eller forbedringsrolle.'],
+            prosjektledelse:[18,'Utviklerrolle, ikke prosjektledelse.'],
+            strategi_arkitektur:[14,'Ingen arkitektur- eller strategiansvar.'],
+            endringsledelse_prosessledelse:[12,'Ingen endrings- eller prosessledelse.']},
+    cons:[['jonas',28,'Jonas jobber med data og automatisering, ikke ren produktutvikling.'],
+          ['anders',25,'Anders er arkitekt, ikke utvikler i et produktteam.'],
+          ['kari',16,'Ingen relevant match mot en ren utviklerrolle.']]
+  },
+];
+
+const settings = {
+  accounts:[
+    {email:'broker@figment.no', host:'imap.figment.no', last:'for 6 min siden'},
+    {email:'oppdrag@figment.no', host:'imap.figment.no', last:'for 6 min siden'},
+  ],
+  domains:[
+    {domain:'experis.no', label:'Experis'},
+    {domain:'eworkgroup.com', label:'Ework'},
+    {domain:'witted.com', label:'Witted'},
+    {domain:'brainville.com', label:'Brainville'},
+    {domain:'verama.com', label:'Verama'},
+    {domain:'onsiter.com', label:'Onsiter'},
+  ],
+  dedupBlocked:3,
+};
+
+// ---------- Tilstand ----------
+const STATUS_LABELS = {ny:'Ny', kvalifisert:'Kvalifisert', avvist:'Avvist'};
+let view = 'requests';
+let filter = 'ny';
+let selLoc = new Set();
+let selectedId = null;
+let currentUser = null;
+
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function topArea(req){ let best=null; for(const [k,[p]] of Object.entries(req.scores)){ if(!best||p>best[1]) best=[k,p]; } return {key:best[0], pct:best[1]}; }
+function tier(p){ return p>=70?'strong':p>=40?'med':'low'; }
+function tone(p){ return p>=70?'good':p>=50?'mid':'bad'; }
+function initials(nm){ return nm.split(' ').filter(Boolean).map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
+function ringColor(p){ return p>=70?'var(--green)':p>=40?'var(--purple)':'var(--pill)'; }
+function relMeter(level, big){ const m=REL[level]; let seg=''; for(let i=1;i<=4;i++) seg+=`<i class="${i<=m.n?'on':''}"></i>`; return `<span class="${big?'meter big':'meter'}" style="--rc:${m.col}">${seg}</span>`; }
+
+function locInteresting(locs){
+  const cities = locs.filter(l=>l!=='Remote'&&l!=='Hybrid');
+  if(locs.includes('Remote') && cities.length===0) return true;
+  if(cities.some(c=>OFFICE.includes(c))) return true;
+  if(cities.length===0) return true;
+  return false;
+}
+
+// Anbefalt aksjon fra tjeneste + lokasjon + konsulent + relasjon
+function recommend(r){
+  const svc=topArea(r).pct, cons=r.cons[0][1], rn=REL[r.rel.level].n, locGood=locInteresting(r.locations);
+  const factors=[
+    {label:'Tjeneste', val:svc+'%', tone:tone(svc)},
+    {label:'Konsulent', val:cons+'%', tone:tone(cons)},
+    {label:'Relasjon', val:REL[r.rel.level].label, tone:rn>=3?'good':rn===2?'mid':'bad'},
+    {label:'Lokasjon', val:r.locations.join(' / '), tone:locGood?'good':'bad'},
+  ];
+  if(svc<35) return {verdict:'avvis', why:`Tjenestematch bare ${svc}% – utenfor Figments tjenesteområder.`, factors};
+  let pts=0;
+  pts+= svc>=70?2:svc>=50?1:0;
+  pts+= cons>=70?2:cons>=50?1:0;
+  pts+= rn>=3?1:0;
+  pts+= locGood?1:0;
+  const neg=[];
+  if(rn<3) neg.push('svak relasjon');
+  if(!locGood) neg.push(`${r.locations.join('/')} er mindre prioritert`);
+  if(cons<50) neg.push('svak konsulentmatch');
+  let verdict = pts>=5?'kvalifiser' : pts<=2?'avvis':'vurder';
+  let why;
+  if(verdict==='kvalifiser') why=`Høy match på tjeneste (${svc}%) og konsulent (${cons}%)${rn>=3?`, og ${REL[r.rel.level].label.toLowerCase()} relasjon`:''}.`;
+  else if(verdict==='vurder') why=`Lovende fagmatch (${svc}% / ${cons}%), men ${neg.join(' og ')} trekker ned.`;
+  else why=`Svak samlet match${neg.length?`: ${neg.join(', ')}`:''}.`;
+  return {verdict, why, factors};
+}
+
+function afterLocation(){
+  if(!selLoc.size) return REQUESTS.slice();
+  return REQUESTS.filter(r=>r.locations.some(l=>selLoc.has(l)));
+}
+function counts(){ const base=afterLocation(); const c={ny:0,kvalifisert:0,avvist:0,alle:base.length}; base.forEach(r=>c[r.status]++); return c; }
+function visible(){ let rs=afterLocation(); if(filter!=='alle') rs=rs.filter(r=>r.status===filter); return rs.sort((a,b)=>topArea(b).pct-topArea(a).pct); }
+function locCount(loc){ return REQUESTS.filter(r=>r.locations.includes(loc)).length; }
+
+// ---------- Render: Forespørsler ----------
+function renderLoc(){
+  document.getElementById('locchips').innerHTML = LOCATIONS.map(l=>
+    `<button class="locchip" data-loc="${l}" aria-pressed="${selLoc.has(l)}">${l} <span class="cnt">${locCount(l)}</span></button>`).join('');
+  document.getElementById('locclear').hidden = selLoc.size===0;
+}
+function renderTabs(){
+  const c=counts();
+  const defs=[['ny','Nye',c.ny],['kvalifisert','Kvalifiserte',c.kvalifisert],['avvist','Avviste',c.avvist],['alle','Alle',c.alle]];
+  document.getElementById('tabs').innerHTML = defs.map(([k,l,n])=>
+    `<button class="tab" role="listitem" aria-pressed="${filter===k}" data-f="${k}">${l} <span class="cnt">${n}</span></button>`).join('');
+}
+function renderList(){
+  const list=document.getElementById('list'); const rs=visible();
+  if(!rs.length){ list.innerHTML='<div class="card empty">Ingen forespørsler i denne visningen.</div>'; return; }
+  list.innerHTML = rs.map(r=>{
+    const ta=topArea(r), rl=REL[r.rel.level], rec=recommend(r);
+    return `<button class="card item" role="listitem" data-id="${r.id}" aria-current="${selectedId===r.id}">
+      <div class="eyebrow">${esc(r.broker)}</div>
+      <h3>${esc(r.subject)}</h3>
+      <div class="meta"><span>${esc(r.received.slice(0,10))}</span><span class="sep">·</span><span>${esc(r.locations.join(' / '))}</span></div>
+      <div class="foot">
+        <div class="bestmatch"><span class="pct txt-${tier(ta.pct)}">${ta.pct}%</span><span class="nm">${esc(AREA_NAME[ta.key])}</span></div>
+        <span class="rec-pill ${REC[rec.verdict].pill}">Forslag: ${REC[rec.verdict].label}</span>
+      </div>
+      <div class="subrow">${relMeter(r.rel.level)}<span>${esc(rl.label)} relasjon</span><span class="sep">·</span><span class="chip ${r.status}">${STATUS_LABELS[r.status]}</span></div>
+    </button>`;
+  }).join('');
+}
+function renderDetail(){
+  const wrap=document.getElementById('detailWrap');
+  const r=REQUESTS.find(x=>x.id===selectedId);
+  if(!r){ wrap.innerHTML='<div class="detail"><div class="empty">Velg en forespørsel i listen for å se detaljer, anbefaling, foretak, relasjon og match.</div></div>'; return; }
+
+  const rec=recommend(r), recMeta=REC[rec.verdict];
+  const areasSorted=[...SERVICE_AREAS].sort((a,b)=>r.scores[b.key][0]-r.scores[a.key][0]);
+  const bestKey=areasSorted[0].key;
+  const svcHtml=areasSorted.map(a=>{ const [p,why]=r.scores[a.key]; const t=tier(p);
+    return `<div class="svc-row">
+      <div class="svc-name">${a.key===bestKey?`<mark>${esc(a.name)}</mark>`:esc(a.name)} ${a.key===bestKey?'<span class="star">· beste match</span>':''}</div>
+      <div class="svc-pct txt-${t}">${p}%</div>
+      <div class="bar"><i class="tier-${t}" style="width:${p}%"></i></div>
+      <div class="svc-why">${esc(why)}</div></div>`;
+  }).join('');
+
+  const consHtml=r.cons.map(([cid,p,why])=>{ const c=CONSULTANTS[cid];
+    return `<div class="cons-card"><div class="cons-top">
+        <div class="ring" style="background:conic-gradient(${ringColor(p)} ${p}%, var(--surface) 0)"><b>${p}%</b></div>
+        <div class="cons-id"><div class="nm">${esc(c.name)}</div><div class="ttl">${esc(c.title)} · ${esc(c.loc)} · ${c.years} år</div></div>
+      </div>
+      <div class="cons-why">${esc(why)}</div>
+      <details class="cons-more"><summary>masterCV</summary>
+        <div class="cv">${esc(c.cv)}
+          <div class="tags">${c.skills.map(s=>`<span class="tag">${esc(s)}</span>`).join('')}</div>
+          <div class="tags">${c.certs.map(s=>`<span class="tag">${esc(s)}</span>`).join('')}</div>
+        </div></details></div>`;
+  }).join('');
+
+  const o=r.org, rl=REL[r.rel.level], s=r.rel.sig;
+  const contactsHtml=r.contacts.map(c=>`<div class="contact">
+      <div class="ava">${esc(initials(c.name))}</div>
+      <div class="who"><div class="nm">${esc(c.name)}</div><div class="ro">${esc(c.role)}</div></div>
+      <div class="ct">${esc(c.email)}${c.phone&&c.phone!=='—'?'<br>'+esc(c.phone):''}</div></div>`).join('');
+  const sigChips=[
+    `<span class="sig"><b>${s.deals}</b> dealer</span>`,`<span class="sig"><b>${s.won}</b> vunnet</span>`,
+    `<span class="sig"><b>${s.activities}</b> aktiviteter</span>`,`<span class="sig"><b>${s.emails}</b> e-poster</span>`,
+    `<span class="sig"><b>${s.contacts}</b> kontakter</span>`,`<span class="sig">Sist kontakt: <b>${esc(s.last)}</b></span>`,
+  ].join('');
+
+  const facHtml=rec.factors.map(f=>`<span class="fac ${f.tone}">${esc(f.label)} <b>${esc(f.val)}</b></span>`).join('');
+  const recBanner=`<div class="recbanner" style="--rcol:${recMeta.col}">
+    <div class="recmain"><div class="recverdict">Anbefalt: ${recMeta.label}</div><div class="recwhy">${esc(rec.why)}</div></div>
+    <div class="recfactors">${facHtml}</div></div>`;
+
+  const orgSection=`<div class="section"><h4>Foretak og relasjon</h4>
+    <div class="org">
+      <div><div class="nm">${esc(o.name)}</div><div class="org-meta">${esc(o.industry)}${o.address&&o.address!=='—'?' · '+esc(o.address):''}</div></div>
+      ${o.pdId?`<a class="pdlink" href="#" onclick="return false">Åpne i Pipedrive ↗</a>`:`<span class="org-meta">Ikke i Pipedrive ennå</span>`}
+    </div>
+    <div class="contacts">${contactsHtml}</div>
+    <div class="relbox">
+      <div class="relhead"><span class="relbadge">Relasjon: ${esc(rl.label)}</span>${relMeter(r.rel.level,true)}</div>
+      <div class="signals">${sigChips}</div>
+      <div class="relwhy">${esc(r.rel.why)}</div>
+    </div></div>`;
+
+  let actionHtml;
+  if(r.status==='ny') actionHtml=`<div class="actions">
+      <button class="btn btn-primary" data-act="qualify">Kvalifiser → Pipedrive</button>
+      <button class="btn btn-ghost" data-act="reject">Avvis</button></div>`;
+  else if(r.status==='kvalifisert') actionHtml=`<div class="resolved"><span class="chip kvalifisert">Kvalifisert</span>
+      <span>Opprettet som deal i «Sonat Gruppen» · steg «Kvalifisert lead»${r.dealId?` · <a href="#" onclick="return false">deal ${esc(r.dealId)}</a>`:''}</span></div>`;
+  else actionHtml=`<div class="resolved"><span class="chip avvist">Avvist</span><span>${esc(r.rejectReason||'Avvist etter gjennomgang.')}</span></div>`;
+
+  wrap.innerHTML=`<div class="detail">
+    <div class="detail-hd">
+      <div class="hdrow"><div><div class="eyebrow">${esc(r.broker)}</div><h2>${esc(r.subject)}</h2></div>
+        <span class="chip ${r.status}">${STATUS_LABELS[r.status]}</span></div>
+      <div class="kv"><span>Fra <b>${esc(r.from)}</b></span><span>Til <b>${esc(r.to)}</b></span>
+        <span>Mottatt <b>${esc(r.received)}</b></span><span>Sted <b>${esc(r.locations.join(' / '))}</b></span><span>Frist <b>${esc(r.deadline)}</b></span></div>
+    </div>
+    ${recBanner}
+    ${orgSection}
+    <div class="section"><h4>Epost</h4>
+      <div class="email">${esc(r.body)}</div>
+      ${r.attachments.length?`<div class="attachments">${r.attachments.map(a=>`<span class="att"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7.5-7.5"/></svg>${esc(a)}</span>`).join('')}</div>`:''}
+    </div>
+    <div class="section"><h4>Tjenestematch</h4>
+      ${r.low?`<div class="lowbanner">Lav match mot alle tjenesteområder – trolig utenfor det Figment leverer.</div>`:''}${svcHtml}</div>
+    <div class="section"><h4>Konsulentmatch</h4><div class="cons">${consHtml}</div></div>
+    <div class="section">${actionHtml}</div>
+  </div>`;
+}
+
+// ---------- Render: Innstillinger ----------
+function renderSettings(){
+  const roleLabel = currentUser ? (currentUser.isOwner?'Eier':currentUser.canEdit?'Redaktør':'Medlem') : '—';
+  const userRow = currentUser
+    ? `<div class="row"><div class="main"><div class="t">${esc(currentUser.name||'Innlogget bruker')}</div><div class="s">${esc(currentUser.email||'—')} · ${esc(roleLabel)}</div></div><div class="right"><span class="statusdot">Pålogget</span></div></div>`
+    : `<div class="row"><div class="main"><div class="t">Ikke innlogget</div><div class="s">Forhåndsvisning uten Figment-konto</div></div></div>`;
+
+  const accountRows = settings.accounts.map((a,i)=>`<div class="row">
+      <div class="main"><div class="t">${esc(a.email)}</div><div class="s">IMAP · ${esc(a.host)} · sist synk ${esc(a.last)}</div></div>
+      <div class="right"><span class="statusdot">Tilkoblet</span><button class="x" data-act="rm-account" data-i="${i}" aria-label="Fjern konto">×</button></div>
+    </div>`).join('');
+
+  const domainRows = settings.domains.map((d,i)=>`<div class="row">
+      <div class="main"><div class="t">${esc(d.domain)}</div><div class="s">${esc(d.label||'—')}</div></div>
+      <div class="right"><button class="x" data-act="rm-domain" data-i="${i}" aria-label="Fjern domene">×</button></div>
+    </div>`).join('');
+
+  document.getElementById('settingsBody').innerHTML = `
+    <div class="panel">
+      <div class="panel-hd"><h3>Brukere og tilgang</h3><p>Tilgang styres av Figment-innlogging. Alle med @figment.no-konto kan logge inn; eiere kan endre innstillinger.</p></div>
+      <div class="panel-bd">${userRow}</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd"><h3>Tilkoblede kontoer</h3><p>Postkassene som brokerne sender til. Flere kontoer kan overvåkes samtidig.</p></div>
+      <div class="panel-bd">
+        ${accountRows||'<div class="row"><div class="s">Ingen kontoer ennå.</div></div>'}
+        <div class="addform">
+          <input id="acc-email" type="email" placeholder="ny.konto@figment.no" aria-label="E-post">
+          <input id="acc-host" type="text" placeholder="imap.figment.no" aria-label="IMAP-server">
+          <button class="btn btn-ghost btn-sm" data-act="add-account">Legg til konto</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd"><h3>Overvåkede avsenderdomener</h3><p>Lista over brokere å se etter. Bare e-post fra disse domenene plukkes opp.</p></div>
+      <div class="panel-bd">
+        ${domainRows||'<div class="row"><div class="s">Ingen domener ennå.</div></div>'}
+        <div class="addform">
+          <input id="dom-domain" type="text" placeholder="domene.no" aria-label="Domene">
+          <input id="dom-label" type="text" placeholder="Brokernavn (valgfritt)" aria-label="Navn">
+          <button class="btn btn-ghost btn-sm" data-act="add-domain">Legg til domene</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel dedup">
+      <div class="panel-hd"><h3>Dublettkontroll</h3><p>Hindrer at samme forespørsel registreres mer enn én gang – også når den kommer til flere kontoer.</p></div>
+      <div class="panel-bd">
+        <div class="row"><div class="main"><div class="statbig">${settings.dedupBlocked}</div><div class="s">dubletter luket ut denne uken</div></div>
+          <div class="right"><label class="toggle"><input type="checkbox" checked disabled> Sjekk på tvers av kontoer</label></div></div>
+        <ul>
+          <li>Samme <b>Message-ID</b> registreres aldri to ganger.</li>
+          <li>Samme <b>innhold</b> (avsender + emne + normalisert tekst) gjenkjennes selv med ulik Message-ID, så videresendinger og forespørsler til flere kontoer ikke dobbeltføres.</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+function render(){
+  document.querySelectorAll('#viewnav button').forEach(b=>b.setAttribute('aria-current', String(b.dataset.view===view)));
+  document.getElementById('viewRequests').hidden = view!=='requests';
+  document.getElementById('viewSettings').hidden = view!=='settings';
+  if(view==='requests'){ renderLoc(); renderTabs(); renderList(); renderDetail(); }
+  else renderSettings();
+}
+
+// ---------- Modaler ----------
+function closeModal(){ document.getElementById('modalMount').innerHTML=''; }
+function toast(msg){ const m=document.getElementById('toastMount'); m.innerHTML=`<div class="toast">${esc(msg)}</div>`; setTimeout(()=>{ if(m.firstChild) m.innerHTML=''; },2600); }
+
+function qualifyModal(r){
+  const ta=topArea(r), topCons=CONSULTANTS[r.cons[0][0]], rl=REL[r.rel.level], c0=r.contacts[0], rec=recommend(r);
+  const note=`Innkommet via ${r.broker}. Beste tjenestematch: ${AREA_NAME[ta.key]} (${ta.pct}%). Foreslått konsulent: ${topCons.name} (${r.cons[0][1]}%). Relasjon: ${rl.label}. Anbefaling: ${REC[rec.verdict].label}. Frist: ${r.deadline}.`;
+  document.getElementById('modalMount').innerHTML=`
+   <div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true" aria-label="Kvalifiser til Pipedrive">
+      <div class="modal-hd"><div class="eyebrow">Kvalifiser</div><h3>Oppretter deal i Pipedrive</h3></div>
+      <div class="modal-bd">
+        <span class="pipe"><span class="dot"></span> Pipeline «Sonat Gruppen» · steg «Kvalifisert lead»</span>
+        <div class="deal">
+          <div class="deal-row"><span class="k">Tittel</span><span class="v">${esc(r.subject)}</span></div>
+          <div class="deal-row"><span class="k">Organisasjon</span><span class="v">${esc(r.org.name)}${r.org.pdId?` (#${r.org.pdId})`:' (ny)'}</span></div>
+          <div class="deal-row"><span class="k">Kontaktperson</span><span class="v">${esc(c0?c0.name:'—')}</span></div>
+          <div class="deal-row"><span class="k">Relasjon</span><span class="v">${esc(rl.label)}</span></div>
+          <div class="deal-row"><span class="k">Selskap (tag)</span><span class="v">Figment</span></div>
+          <div class="deal-row"><span class="k">Tender deadline</span><span class="v">${esc(r.deadline)}</span></div>
+          <div class="deal-row"><span class="k">Tjenesteområde</span><span class="v">${esc(AREA_NAME[ta.key])} · ${ta.pct}%</span></div>
+          <div class="deal-row"><span class="k">Foreslått konsulent</span><span class="v">${esc(topCons.name)} · ${r.cons[0][1]}%</span></div>
+        </div>
+        <div class="note"><b>Notat på deal:</b><br>${esc(note)}</div>
+      </div>
+      <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button>
+        <button class="btn btn-primary" data-act="confirm-qualify">Opprett deal (mock)</button></div>
+   </div></div>`;
+}
+function rejectModal(r){
+  document.getElementById('modalMount').innerHTML=`
+   <div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true" aria-label="Avvis forespørsel">
+      <div class="modal-hd"><div class="eyebrow">Avvis</div><h3>Avvis forespørsel</h3></div>
+      <div class="modal-bd">
+        <p style="font-size:14px;color:var(--soft);margin:0">«${esc(r.subject)}» fra ${esc(r.broker)} markeres som avvist og sendes ikke til Pipedrive.</p>
+        <div class="field"><label for="rr">Begrunnelse (valgfritt)</label><textarea id="rr" placeholder="F.eks. utenfor tjenesteområde, feil geografi, lav match …"></textarea></div>
+      </div>
+      <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button>
+        <button class="btn btn-primary" data-act="confirm-reject">Avvis forespørsel</button></div>
+   </div></div>`;
+}
+
+// ---------- Hendelser ----------
+document.getElementById('viewnav').addEventListener('click',e=>{ const b=e.target.closest('[data-view]'); if(!b) return; view=b.dataset.view; render(); });
+document.getElementById('locchips').addEventListener('click',e=>{ const b=e.target.closest('[data-loc]'); if(!b) return; const l=b.dataset.loc; selLoc.has(l)?selLoc.delete(l):selLoc.add(l); if(selectedId && !visible().some(r=>r.id===selectedId)) selectedId=visible()[0]?.id||null; render(); });
+document.getElementById('locclear').addEventListener('click',()=>{ selLoc.clear(); render(); });
+document.getElementById('tabs').addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filter=b.dataset.f; render(); });
+document.getElementById('list').addEventListener('click',e=>{ const b=e.target.closest('[data-id]'); if(!b) return; selectedId=b.dataset.id; render(); if(window.matchMedia('(max-width:860px)').matches) document.getElementById('detailWrap').scrollIntoView({behavior:'smooth',block:'start'}); });
+document.getElementById('detailWrap').addEventListener('click',e=>{ const b=e.target.closest('[data-act]'); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==='qualify') qualifyModal(r); if(b.dataset.act==='reject') rejectModal(r); });
+document.getElementById('modalMount').addEventListener('click',e=>{ const r=REQUESTS.find(x=>x.id===selectedId);
+  if(e.target.matches('[data-scrim]')||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
+  if(!r) return;
+  if(e.target.closest('[data-act="confirm-qualify"]')){ r.status='kvalifisert'; r.dealId='mock-'+Math.floor(10000+Math.random()*90000); closeModal(); render(); toast('Mock: ville opprettet deal i Pipedrive «Sonat Gruppen»'); }
+  if(e.target.closest('[data-act="confirm-reject"]')){ const t=document.getElementById('rr'); r.status='avvist'; r.rejectReason=(t&&t.value.trim())||'Avvist etter gjennomgang.'; closeModal(); render(); toast('Forespørsel avvist'); }
+});
+document.getElementById('viewSettings').addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]'); if(!b) return;
+  if(b.dataset.act==='rm-account'){ settings.accounts.splice(+b.dataset.i,1); renderSettings(); }
+  if(b.dataset.act==='rm-domain'){ settings.domains.splice(+b.dataset.i,1); renderSettings(); }
+  if(b.dataset.act==='add-account'){ const em=document.getElementById('acc-email'), ho=document.getElementById('acc-host');
+    if(em.value.trim()){ settings.accounts.push({email:em.value.trim(), host:(ho.value.trim()||'imap.figment.no'), last:'ikke synket ennå'}); renderSettings(); toast('Konto lagt til'); } }
+  if(b.dataset.act==='add-domain'){ const dm=document.getElementById('dom-domain'), la=document.getElementById('dom-label');
+    if(dm.value.trim()){ settings.domains.push({domain:dm.value.trim().toLowerCase(), label:la.value.trim()}); renderSettings(); toast('Domene lagt til'); } }
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+
+// ---------- Figment-innlogging (user-kapabilitet) ----------
+function setGate(state){
+  const gate=document.getElementById('gate'), app=document.getElementById('app');
+  if(state==='in'||state==='preview'){ gate.hidden=true; app.hidden=false; }
+  else { gate.hidden=false; app.hidden=true; }
+  if(state==='out'){ document.getElementById('gatemsg').textContent='Logg inn med Figment-kontoen din for å se brokerforespørslene.'; document.getElementById('gatespin').hidden=true; }
+}
+function fillUserChip(){
+  if(!currentUser) return;
+  document.getElementById('uname').textContent = currentUser.name || 'Innlogget';
+  document.getElementById('urole').textContent = currentUser.isOwner?'Eier':currentUser.canEdit?'Redaktør':'Figment';
+  const av=document.getElementById('uava'); if(currentUser.avatarUrl) av.src=currentUser.avatarUrl;
+  document.getElementById('userchip').hidden=false;
+}
+async function initAuth(){
+  if(!(window.claude && window.claude.use)){ setGate('preview'); render(); return; }
+  let u=null;
+  try{ u = await Promise.race([claude.use('user'), new Promise(res=>setTimeout(()=>res('timeout'),10000))]); }catch(_){ u=null; }
+  if(u && u!=='timeout'){
+    try{ currentUser = await u.me(); }catch(_){ currentUser=null; }
+    if(currentUser && (currentUser.id || currentUser.name)){ setGate('in'); fillUserChip(); render(); return; }
+  }
+  // Ingen innlogget Figment-bruker i denne visningen
+  setGate('out');
+}
+
+// Start
+selectedId = visible()[0]?.id || null;
+render();           // app bygges bak porten
+initAuth();         // avgjør porten når claude.use svarer
+</script>

@@ -1,0 +1,40 @@
+name: Poll brokerforespørsler
+
+on:
+  schedule:
+    # Hvert 15. minutt (UTC). Juster ved behov.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: broker-poller
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer avhengigheter
+        run: pip install -r poller/requirements.txt
+
+      - name: Kjør poller
+        working-directory: poller
+        env:
+          IMAP_HOST: ${{ secrets.IMAP_HOST }}
+          IMAP_PORT: ${{ secrets.IMAP_PORT }}
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          IMAP_MAILBOX: ${{ secrets.IMAP_MAILBOX }}
+          # Flere kontoer (valgfritt): JSON-liste, overstyrer feltene over
+          IMAP_ACCOUNTS: ${{ secrets.IMAP_ACCOUNTS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+        run: python run.py

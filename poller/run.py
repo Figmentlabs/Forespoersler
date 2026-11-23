@@ -1,0 +1,202 @@
+"""Hovedløkke for polleren.
+
+Kjøres periodisk (cron / GitHub Actions). For hver konto, per nye epost:
+  1. domenefilter (bare overvåkede avsenderdomener)
+  2. parse epost + vedlegg
+  3. dublettsjekk (Message-ID + innhold-hash på tvers av kontoer)
+  4. lagre forespørsel + vedlegg i Supabase
+  5. score mot tjenesteområder OG konsulenter med Claude
+  6. lagre match_scores + consultant_matches, oppdater forespørselen
+
+Status settes til 'ny' — kvalifisering/avvisning skjer manuelt i UI-et.
+"""
+from __future__ import annotations
+
+import hashlib
+import logging
+import re
+import sys
+from pathlib import Path
+
+# Last .env fra prosjektroten automatisk, så kjøring ikke krever `source .env`.
+try:
+    from dotenv import load_dotenv
+
+    # override=True: .env vinner over evt. utdaterte variabler i shell-økta
+    # (f.eks. hvis noen tidligere kjørte `set -a && source .env`).
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+except Exception:
+    pass
+
+from config import Config, ConfigError, ImapAccount
+from email_parser import ParsedEmail, parse_email
+from imap_client import ImapClient
+from scoring import Scorer, ScoringResult
+from supabase_client import Store
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("poller")
+
+
+def content_hash(mail: ParsedEmail) -> str:
+    norm = "\n".join(
+        [
+            (mail.from_email or "").strip().lower(),
+            re.sub(r"\s+", " ", (mail.subject or "")).strip().lower(),
+            re.sub(r"\s+", " ", (mail.body_text or "")).strip().lower(),
+        ]
+    )
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
+
+
+def domain_of(email: str | None) -> str:
+    if not email or "@" not in email:
+        return ""
+    return email.rsplit("@", 1)[1].strip().lower()
+
+
+def _store_request(store: Store, mail: ParsedEmail, chash: str, account_id: str | None) -> str | None:
+    payload = {
+        "message_id": mail.message_id,
+        "content_hash": chash,
+        "inbox_account_id": account_id,
+        "from_email": mail.from_email or None,
+        "from_name": mail.from_name or None,
+        "to_email": mail.to_email or None,
+        "subject": mail.subject or None,
+        "body_text": mail.body_text or None,
+        "body_html": mail.body_html or None,
+        "received_at": mail.received_at.isoformat() if mail.received_at else None,
+        "raw_headers": mail.headers,
+        "status": "ny",
+    }
+    return store.insert_request(payload)
+
+
+def _store_attachments(store: Store, request_id: str, mail: ParsedEmail) -> None:
+    for att in mail.attachments:
+        try:
+            path = store.upload_attachment(request_id, att.filename, att.content_type, att.data)
+            store.insert_attachment(request_id, att.filename, att.content_type, len(att.data), path)
+        except Exception as exc:
+            log.warning("Kunne ikke lagre vedlegg %s: %s", att.filename, exc)
+
+
+def _store_scores(store, request_id, areas, consultants, result: ScoringResult) -> None:
+    key_to_id = {a["key"]: a["id"] for a in areas}
+    rows = []
+    for s in result.scores:
+        area_id = key_to_id.get(s.area_key)
+        if area_id:
+            rows.append(
+                {
+                    "request_id": request_id,
+                    "service_area_id": area_id,
+                    "score": max(0, min(100, s.score)),
+                    "reasoning": s.reasoning,
+                }
+            )
+    store.insert_match_scores(rows)
+
+    cons_ids = {c["id"] for c in consultants}
+    crows = [
+        {
+            "request_id": request_id,
+            "consultant_id": c.consultant_id,
+            "match_percent": max(0, min(100, c.match)),
+            "reasoning": c.reasoning,
+        }
+        for c in result.consultants
+        if c.consultant_id in cons_ids
+    ]
+    store.insert_consultant_matches(crows)
+
+    best_area_id = key_to_id.get(result.best_area_key)
+    store.update_request_scoring(request_id, best_area_id, max(0, min(100, result.total_score)))
+
+
+def process_account(
+    cfg: Config, store: Store, scorer: Scorer, areas, consultants, domains, acc: ImapAccount
+) -> int:
+    key = f"{acc.email}:{acc.mailbox}"
+    last_uid = store.get_last_uid(key)
+    account_id = store.inbox_account_id(acc.email)
+    log.info("[%s] starter fra UID > %s", acc.email, last_uid)
+
+    with ImapClient(acc.host, acc.port, acc.user, acc.password, acc.mailbox) as imap:
+        messages = imap.fetch_since(last_uid, cfg.max_fetch)
+    log.info("[%s] hentet %d melding(er)", acc.email, len(messages))
+
+    processed = 0
+    highest = last_uid
+    for msg in messages:
+        highest = max(highest, msg.uid)
+        try:
+            mail = parse_email(msg.raw)
+        except Exception as exc:
+            log.warning("[%s] kunne ikke parse UID %s: %s", acc.email, msg.uid, exc)
+            continue
+
+        if cfg.filter_domains and domains and domain_of(mail.from_email) not in domains:
+            log.info("[%s] hopper over ikke-overvåket avsender: %s", acc.email, mail.from_email)
+            continue
+
+        chash = content_hash(mail)
+        if store.request_exists(mail.message_id, chash):
+            log.info("[%s] hopper over duplikat: %s", acc.email, mail.subject)
+            continue
+
+        request_id = _store_request(store, mail, chash, account_id)
+        if not request_id:
+            log.warning("[%s] fikk ingen request_id for UID %s", acc.email, msg.uid)
+            continue
+
+        _store_attachments(store, request_id, mail)
+        try:
+            result = scorer.score(areas, consultants, mail.subject or "", mail.body_text or "")
+            _store_scores(store, request_id, areas, consultants, result)
+            log.info("[%s] scoret '%s' → %s (%d)", acc.email, (mail.subject or "")[:50],
+                     result.best_area_key, result.total_score)
+        except Exception as exc:
+            log.error("[%s] scoring feilet for %s: %s", acc.email, request_id, exc)
+            store.mark_request_error(request_id)
+        processed += 1
+
+    if highest > last_uid:
+        store.set_last_uid(key, highest)
+    store.touch_account(acc.email)
+    return processed
+
+
+def run() -> int:
+    try:
+        cfg = Config.from_env()
+    except ConfigError as exc:
+        log.error(str(exc))
+        return 2
+
+    store = Store(cfg.supabase_url, cfg.supabase_key, cfg.storage_bucket)
+    scorer = Scorer(cfg.anthropic_api_key, cfg.anthropic_model)
+
+    areas = store.service_areas()
+    if not areas:
+        log.error("Ingen tjenesteområder i databasen — kjør seeding først.")
+        return 2
+    consultants = store.consultants()
+    domains = store.sender_domains()
+    log.info("%d tjenesteområder, %d konsulenter, %d overvåkede domener, %d konto(er)",
+             len(areas), len(consultants), len(domains), len(cfg.accounts))
+
+    total = 0
+    for acc in cfg.accounts:
+        try:
+            total += process_account(cfg, store, scorer, areas, consultants, domains, acc)
+        except Exception as exc:
+            log.error("[%s] konto feilet: %s", acc.email, exc)
+
+    log.info("Ferdig. Behandlet %d ny(e) forespørsel(er).", total)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())
