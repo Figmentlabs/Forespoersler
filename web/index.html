@@ -541,21 +541,30 @@ function urlAuthError(){
     return e?decodeURIComponent(String(e).replace(/\+/g," ")):null;
   }catch(_){ return null; }
 }
+let authShown=false;
+async function showFor(session){
+  if(authShown) return;
+  authShown=true;
+  try{ await handleSession(session); }
+  catch(err){ authShown=false; showGate("error", String((err&&err.message)||err)); }
+}
 async function init(){
   showGate("loading");
   const ae=urlAuthError();
   if(ae){ try{ history.replaceState(null,"",location.pathname); }catch(_){}; showGate("error", ae); return; }
-  let settled=false;
-  const settle=(s)=>{ settled=true; Promise.resolve(handleSession(s)).catch(err=>showGate("error", String((err&&err.message)||err))); };
-  // Fanger forsinket SIGNED_IN etter kode-utveksling; ignorerer tom INITIAL_SESSION.
-  sb.auth.onAuthStateChange((evt, session)=>{ if(session || evt==="SIGNED_OUT") settle(session); });
-  // Sikkerhetsnett: fryser aldri på spinneren.
-  const guard=setTimeout(()=>{ if(!settled) showGate("out"); }, 10000);
-  try{
-    const res=await sb.auth.getSession();
-    clearTimeout(guard);
-    settle(res && res.data ? res.data.session : null);
-  }catch(err){ clearTimeout(guard); showGate("error", String((err&&err.message)||err)); }
+  // Reager på innlogging/utlogging.
+  sb.auth.onAuthStateChange((evt, session)=>{
+    if(session) showFor(session);
+    else if(evt==="SIGNED_OUT"){ authShown=false; me=null; showGate("out"); }
+  });
+  // Poll getSession til en sesjon finnes (robust mot timing ved oppstart /
+  // kode-utveksling). Viser appen straks sesjonen er der; ellers «logg inn».
+  for(let i=0; i<30 && !authShown; i++){
+    try{ const r=await sb.auth.getSession(); if(r && r.data && r.data.session){ await showFor(r.data.session); break; } }
+    catch(_){}
+    await new Promise(res=>setTimeout(res, 400));
+  }
+  if(!authShown) await handleSession(null);
 }
 init();
 </script>
