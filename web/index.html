@@ -503,11 +503,12 @@ $("loginbtn").addEventListener("click",()=> sb.auth.signInWithOAuth({ provider:"
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); });
 
 // ---------- Innlogging ----------
-function showGate(state, email){
+function showGate(state, extra){
   $("app").hidden=true; $("gate").hidden=false; $("gatespin").hidden=true; $("loginbtn").hidden=true;
   if(state==="loading"){ $("gatemsg").textContent="Kobler til …"; $("gatespin").hidden=false; }
   else if(state==="out"){ $("gatemsg").textContent="Logg inn med din Figment-konto for å se brokerforespørslene."; $("loginbtn").hidden=false; }
-  else if(state==="denied"){ $("gatemsg").textContent=`${email||"Kontoen"} har ikke tilgang. Bruk en @figment.no- eller @sonat.no-konto.`; $("loginbtn").hidden=false; }
+  else if(state==="denied"){ $("gatemsg").textContent=`${extra||"Kontoen"} har ikke tilgang. Bruk en @figment.no- eller @sonat.no-konto.`; $("loginbtn").hidden=false; }
+  else if(state==="error"){ $("gatemsg").textContent="Innlogging feilet: "+(extra||"ukjent feil")+". Prøv igjen."; $("loginbtn").hidden=false; }
 }
 function showApp(){
   $("gate").hidden=true; $("app").hidden=false;
@@ -522,11 +523,29 @@ async function handleSession(session){
   if(!ok){ await sb.auth.signOut(); showGate("denied", email); return; }
   me = session.user; showApp(); await loadData();
 }
+function urlAuthError(){
+  try{
+    const h=new URLSearchParams((location.hash||"").replace(/^#/,""));
+    const q=new URLSearchParams(location.search||"");
+    const e=h.get("error_description")||h.get("error")||q.get("error_description")||q.get("error");
+    return e?decodeURIComponent(String(e).replace(/\+/g," ")):null;
+  }catch(_){ return null; }
+}
 async function init(){
   showGate("loading");
-  sb.auth.onAuthStateChange((_evt, session)=>{ handleSession(session); });
-  const { data:{session} } = await sb.auth.getSession();
-  handleSession(session);
+  const ae=urlAuthError();
+  if(ae){ try{ history.replaceState(null,"",location.pathname); }catch(_){}; showGate("error", ae); return; }
+  let settled=false;
+  const settle=(s)=>{ settled=true; Promise.resolve(handleSession(s)).catch(err=>showGate("error", String((err&&err.message)||err))); };
+  // Fanger forsinket SIGNED_IN etter kode-utveksling; ignorerer tom INITIAL_SESSION.
+  sb.auth.onAuthStateChange((evt, session)=>{ if(session || evt==="SIGNED_OUT") settle(session); });
+  // Sikkerhetsnett: fryser aldri på spinneren.
+  const guard=setTimeout(()=>{ if(!settled) showGate("out"); }, 10000);
+  try{
+    const res=await sb.auth.getSession();
+    clearTimeout(guard);
+    settle(res && res.data ? res.data.session : null);
+  }catch(err){ clearTimeout(guard); showGate("error", String((err&&err.message)||err)); }
 }
 init();
 </script>
