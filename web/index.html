@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Brokerforespørsler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#FFFFFF; --fg:#252231; --muted:#6B6878; --soft:#4A4757; --text:#3A3746;
+  --line:#E6E5EA; --line-strong:#252231; --surface:#F5F5F7; --ph:#EEEDF1; --pill:#CFCDD6;
+  --inv-bg:#252231; --inv-fg:#FFFFFF; --inv-muted:#B9B6C4; --inv-soft:#DAD8E2;
+  --hl:#EAF7FD; --green:#9ABE8F; --purple:#78729D; --amber:#C9A14A; --red:#C17D7D;
+  --font-display:'Barlow','Helvetica Neue',Arial,sans-serif;
+  --font-body:'Barlow',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:16px;line-height:1.5}
+h1,h2,h3,h4{margin:0;font-family:var(--font-display);letter-spacing:-0.02em;text-wrap:balance}
+p{margin:0}
+button{font:inherit;cursor:pointer}
+input{font:inherit}
+.gutter{padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+.wordmark{font-family:var(--font-display);font-weight:600;letter-spacing:-0.02em;line-height:1}
+.wordmark .bf{position:relative;z-index:0}
+.wordmark .bf::before{content:"";position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);border-radius:50%;background:var(--green);z-index:-1}
+
+/* Innlogging / tilstand */
+.gate{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;padding:24px;z-index:80}
+.gatecard{max-width:420px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px}
+.gatecard .wordmark{font-size:30px}
+.gatecard .wordmark .bf::before{width:34px;height:34px}
+.gatecard h1{font-size:26px;font-weight:600;margin-top:4px}
+.gatecard p{color:var(--soft);font-size:15px;max-width:340px}
+.gatebtn{display:inline-flex;align-items:center;gap:10px;min-height:50px;padding:0 24px;border-radius:999px;background:var(--fg);color:var(--bg);font-weight:600;border:0;margin-top:4px}
+.gatebtn:hover{opacity:.9}
+.spinner{width:26px;height:26px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--fg);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+
+.topbar{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+.topbar-in{display:flex;align-items:center;gap:12px 20px;padding-block:14px;flex-wrap:wrap}
+.brand{display:inline-flex;align-items:center;gap:14px}
+.brand .wordmark{font-size:20px}
+.brand .wordmark .bf::before{width:22px;height:22px}
+.brand .divider{width:1px;height:22px;background:var(--line-strong);opacity:.25}
+.brand .app{font-weight:500;font-size:15px;color:var(--soft)}
+.viewnav{display:flex;gap:4px}
+.viewnav button{min-height:36px;padding:0 14px;border-radius:999px;border:0;background:transparent;color:var(--soft);font-size:14.5px;font-weight:500}
+.viewnav button[aria-current="true"]{background:var(--surface);color:var(--fg)}
+.topbar .spacer{flex:1}
+.userchip{display:inline-flex;align-items:center;gap:9px}
+.userchip .uava{width:30px;height:30px;border-radius:50%;object-fit:cover;background:var(--ph);display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--soft)}
+.userchip .uname{font-size:14px;font-weight:600}
+.logout{border:0;background:transparent;color:var(--muted);font-size:13px;text-decoration:underline;text-underline-offset:2px}
+
+.locfilter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:18px}
+.locfilter .lbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.locchips{display:flex;gap:6px;flex-wrap:wrap}
+.locchip{min-height:34px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--soft);font-size:13.5px;font-weight:500;display:inline-flex;align-items:center;gap:7px}
+.locchip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.locchip .cnt{opacity:.65;font-variant-numeric:tabular-nums}
+.locclear{border:0;background:transparent;color:var(--muted);font-size:13px;text-decoration:underline;text-underline-offset:2px}
+
+.toolbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding-block:16px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:0 15px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--soft);font-size:14px;font-weight:500}
+.tab[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tab .cnt{font-variant-numeric:tabular-nums;opacity:.7}
+.toolbar .spacer{flex:1}
+.sortnote{font-size:13.5px;color:var(--muted)}
+
+.layout{display:grid;grid-template-columns:minmax(330px,390px) minmax(0,1fr);gap:28px;padding-bottom:64px;align-items:start}
+@media (max-width:860px){.layout{grid-template-columns:1fr;gap:20px}}
+
+.list{display:flex;flex-direction:column;gap:12px;min-width:0}
+.card{border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:16px;text-align:left;width:100%}
+.card:hover{border-color:var(--pill)}
+button.item[aria-current="true"]{border-color:var(--fg);box-shadow:0 0 0 1px var(--fg)}
+.item .eyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.item h3{font-size:17.5px;font-weight:600;line-height:1.25;margin:6px 0 10px}
+.item .meta{font-size:13px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+.item .foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}
+.bestmatch{display:flex;align-items:baseline;gap:8px;min-width:0}
+.bestmatch .pct{font-family:var(--font-display);font-weight:600;font-size:20px;font-variant-numeric:tabular-nums}
+.bestmatch .nm{font-size:12.5px;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .subrow{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.sep{opacity:.5}
+
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.chip.ny{color:#2d6ea8;background:var(--hl)}
+.chip.kvalifisert{color:#3f7a35;background:#eaf4e6}
+.chip.avvist{color:#8a4b4b;background:#f4ebeb}
+.chip.feil{color:#8a4b4b;background:#f4ebeb}
+
+.rec-pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.rec-kvalifiser{color:#3f7a35;background:#eaf4e6}
+.rec-vurder{color:#8a6d1f;background:#f6f0dd}
+.rec-avvis{color:#8a4b4b;background:#f4ebeb}
+
+.meter{display:inline-flex;gap:3px;align-items:center}
+.meter i{width:16px;height:5px;border-radius:2px;background:var(--surface)}
+.meter.big i{width:22px;height:7px}
+.meter i.on{background:var(--rc,var(--pill))}
+
+.detail{border:1px solid var(--line);border-radius:10px;min-width:0;overflow:hidden}
+.detail-hd{padding:24px;border-bottom:1px solid var(--line)}
+.detail-hd .eyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.detail-hd h2{font-size:clamp(22px,2.6vw,30px);font-weight:600;line-height:1.1;margin:8px 0 0}
+.detail-hd .hdrow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.kv{display:flex;flex-wrap:wrap;gap:6px 26px;margin-top:16px;font-size:13.5px;color:var(--soft)}
+.kv b{color:var(--fg);font-weight:600}
+.recbanner{display:flex;flex-wrap:wrap;gap:10px 18px;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--line);border-left:4px solid var(--rcol)}
+.recverdict{font-family:var(--font-display);font-weight:600;font-size:17px;color:var(--rcol)}
+.recwhy{font-size:13.5px;color:var(--soft);margin-top:3px}
+.recfactors{display:flex;flex-wrap:wrap;gap:7px}
+.fac{font-size:12px;border-radius:999px;padding:4px 10px;background:var(--surface);color:var(--soft)}
+.fac b{font-weight:600}
+.fac.good{background:#eaf4e6;color:#3f7a35} .fac.mid{background:#f6f0dd;color:#8a6d1f} .fac.bad{background:#f4ebeb;color:#8a4b4b}
+.section{padding:24px;border-bottom:1px solid var(--line)}
+.section:last-child{border-bottom:0}
+.section h4{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:16px}
+.email{background:var(--surface);border-radius:8px;padding:18px;font-size:14.5px;color:var(--text);line-height:1.6;white-space:pre-wrap}
+.muted-note{color:var(--muted);font-size:13.5px}
+
+.org{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.org .nm{font-weight:600;font-size:16px}
+.org .org-meta{font-size:13px;color:var(--muted);margin-top:3px}
+.relbox{margin-top:14px;background:var(--surface);border-radius:8px;padding:16px}
+.relhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.relbadge{font-family:var(--font-display);font-weight:600;font-size:17px}
+.signals{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.sig{font-size:12.5px;color:var(--soft);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+.sig b{color:var(--fg);font-weight:600}
+.relwhy{font-size:13px;color:var(--muted);margin-top:12px}
+
+.svc-row{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:14px 0;border-top:1px solid var(--line)}
+.svc-row:first-of-type{border-top:0}
+.svc-name{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}
+.svc-name .star{font-size:12px;color:var(--soft);font-weight:500}
+.svc-name mark{background:var(--hl);padding:1px 6px;border-radius:3px}
+.svc-pct{font-family:var(--font-display);font-weight:600;font-size:18px;font-variant-numeric:tabular-nums;align-self:center}
+.bar{grid-column:1 / -1;height:8px;background:var(--surface);border-radius:999px;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:999px}
+.svc-why{grid-column:1 / -1;font-size:13px;color:var(--muted);margin-top:2px}
+.tier-strong{background:var(--green)} .tier-med{background:var(--purple)} .tier-low{background:var(--pill)}
+.txt-strong{color:#3f7a35} .txt-med{color:var(--purple)} .txt-low{color:var(--muted)}
+
+.cons{display:flex;flex-direction:column;gap:12px}
+.cons-card{border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.cons-top{display:flex;align-items:center;gap:14px}
+.ring{position:relative;width:48px;height:48px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center}
+.ring::after{content:"";position:absolute;inset:6px;background:var(--bg);border-radius:50%}
+.ring b{position:relative;z-index:1;font-family:var(--font-display);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.cons-id{flex:1;min-width:0}
+.cons-id .nm{font-weight:600;font-size:15.5px}
+.cons-id .ttl{font-size:13px;color:var(--muted)}
+.cons-why{font-size:13.5px;color:var(--text);margin-top:10px}
+.cons-more{margin-top:10px;font-size:13px}
+.cons-more summary{cursor:pointer;color:var(--soft);font-weight:500;list-style:none}
+.cons-more summary::-webkit-details-marker{display:none}
+.cons-more summary::before{content:"CV  ▸ ";font-weight:600}
+.cons-more[open] summary::before{content:"CV  ▾ "}
+.cv{margin-top:10px;background:var(--surface);border-radius:8px;padding:14px;font-size:13px;color:var(--text)}
+.cv .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.cv .tag{font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--soft)}
+
+.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 24px;border-radius:999px;font-weight:600;font-size:15px;border:1px solid transparent}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn-primary{background:var(--fg);color:var(--bg)}
+.btn-ghost{background:var(--bg);color:var(--fg);border-color:var(--line-strong)}
+.btn-sm{min-height:40px;padding:0 16px;font-size:14px}
+.resolved{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--soft)}
+
+.settings{max-width:760px;padding-bottom:64px;display:flex;flex-direction:column;gap:20px}
+.panel{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.panel-hd{padding:18px 20px;border-bottom:1px solid var(--line)}
+.panel-hd h3{font-size:18px;font-weight:600}
+.panel-hd p{font-size:13.5px;color:var(--muted);margin-top:4px}
+.panel-bd{padding:8px 20px 18px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .main{min-width:0}
+.row .t{font-weight:600;font-size:14.5px}
+.row .s{font-size:12.5px;color:var(--muted)}
+.row .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.statusdot{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--soft)}
+.statusdot::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green)}
+.x{border:0;background:transparent;color:var(--muted);font-size:18px;padding:4px 6px;border-radius:6px}
+.x:hover{background:var(--surface);color:var(--fg)}
+.addform{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.addform input{min-height:40px;padding:0 12px;border:1px solid var(--line);border-radius:8px;flex:1 1 150px;min-width:0}
+.dedup ul{margin:8px 0 0;padding-left:18px;color:var(--text);font-size:13.5px;line-height:1.6}
+
+.scrim{position:fixed;inset:0;background:rgba(37,34,49,.42);display:grid;place-items:center;padding:24px;z-index:50}
+.modal{background:var(--bg);border-radius:12px;max-width:540px;width:100%;max-height:86vh;overflow:auto}
+.modal-hd{padding:22px 24px;border-bottom:1px solid var(--line)}
+.modal-hd h3{font-size:22px;font-weight:600}
+.modal-bd{padding:22px 24px;display:flex;flex-direction:column;gap:14px}
+.field label{display:block;font-size:13px;color:var(--soft);margin-bottom:6px;font-weight:500}
+.field textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;font-size:14px;resize:vertical;min-height:72px}
+.modal-ft{padding:18px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--inv-bg);color:var(--inv-fg);padding:13px 20px;border-radius:999px;font-size:14px;font-weight:500;z-index:60}
+.empty{padding:60px 24px;text-align:center;color:var(--muted)}
+.mockflag{font-size:12px;font-weight:500;color:var(--soft);background:var(--hl);border-radius:999px;padding:6px 11px}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="gatecard">
+    <div class="wordmark"><span class="bf">f</span>igment</div>
+    <h1>Brokerforespørsler</h1>
+    <p id="gatemsg">Kobler til …</p>
+    <div class="spinner" id="gatespin"></div>
+    <button class="gatebtn" id="loginbtn" hidden>Logg inn med Figment</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="topbar-in gutter">
+      <span class="brand">
+        <span class="wordmark"><span class="bf">f</span>igment</span>
+        <span class="divider"></span>
+        <span class="app">Brokerforespørsler</span>
+      </span>
+      <nav class="viewnav" id="viewnav">
+        <button data-view="requests" aria-current="true">Forespørsler</button>
+        <button data-view="settings" aria-current="false">Innstillinger</button>
+      </nav>
+      <span class="spacer"></span>
+      <span class="userchip" id="userchip">
+        <span class="uava" id="uava"></span>
+        <span class="uname" id="uname"></span>
+        <button class="logout" id="logout">Logg ut</button>
+      </span>
+    </div>
+  </header>
+
+  <div class="gutter" id="viewRequests">
+    <div class="locfilter" id="locfilter" hidden>
+      <span class="lbl">Lokasjon</span>
+      <div class="locchips" id="locchips"></div>
+      <button class="locclear" id="locclear" hidden>Nullstill</button>
+    </div>
+    <div class="toolbar">
+      <div class="tabs" id="tabs" role="group" aria-label="Filtrer på status"></div>
+      <span class="spacer"></span>
+      <span class="sortnote">Sortert på matchscore</span>
+    </div>
+    <div class="layout">
+      <div class="list" id="list" role="list"></div>
+      <div id="detailWrap"></div>
+    </div>
+  </div>
+
+  <div class="gutter" id="viewSettings" hidden>
+    <div class="settings" id="settingsBody"></div>
+  </div>
+</div>
+
+<div id="modalMount"></div>
+<div id="toastMount" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+// ---------- Konfig (offentlig; anon-nøkkel er RLS-beskyttet) ----------
+const SUPABASE_URL = "https://wocrhuiyzrckxihqzrla.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndvY3JodWl5enJja3hpaHF6cmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU0NDE3NDcsImV4cCI6MjExMTAxNzc0N30.CKXkBswIQlHXIM3U3LkbnVuUwDQvRxhZR1O9fwHdKqM";
+const ALLOWED_DOMAINS = ["figment.no", "sonat.no"];
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const REL = {
+  svak:{label:"Svak",n:1,col:"var(--pill)"}, middels:{label:"Middels",n:2,col:"var(--amber)"},
+  sterk:{label:"Sterk",n:3,col:"var(--purple)"}, veldig_sterk:{label:"Veldig sterk",n:4,col:"var(--green)"},
+};
+const REC = { kvalifiser:{label:"Kvalifiser",col:"#3f7a35",pill:"rec-kvalifiser"},
+  vurder:{label:"Vurder",col:"#8a6d1f",pill:"rec-vurder"}, avvis:{label:"Avvis",col:"#8a4b4b",pill:"rec-avvis"} };
+const STATUS_LABELS = {ny:"Ny", kvalifisert:"Kvalifisert", avvist:"Avvist", feil:"Feil"};
+const OFFICE = ["Oslo","Bergen"];
+
+let REQUESTS = [], ACCOUNTS = [], DOMAINS = [];
+let view="requests", filter="ny", selLoc=new Set(), selectedId=null, me=null;
+
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s ?? "").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function tier(p){ return p>=70?"strong":p>=40?"med":"low"; }
+function tone(p){ return p>=70?"good":p>=50?"mid":"bad"; }
+function initials(nm){ return (nm||"?").split(" ").filter(Boolean).map(w=>w[0]).join("").slice(0,2).toUpperCase(); }
+function ringColor(p){ return p>=70?"var(--green)":p>=40?"var(--purple)":"var(--pill)"; }
+function scoresOf(r){ return (r.match_scores||[]).slice().sort((a,b)=>b.score-a.score); }
+function consOf(r){ return (r.consultant_matches||[]).slice().sort((a,b)=>b.match_percent-a.match_percent); }
+function topArea(r){ const s=scoresOf(r)[0]; return s?{pct:s.score, name:s.service_areas?.name||"—"}:{pct:r.total_score??0, name:"—"}; }
+function relMeter(level, big){ const m=REL[level]; if(!m) return ""; let seg=""; for(let i=1;i<=4;i++) seg+=`<i class="${i<=m.n?'on':''}"></i>`; return `<span class="${big?'meter big':'meter'}" style="--rc:${m.col}">${seg}</span>`; }
+function locsOf(r){ return Array.isArray(r.locations)?r.locations:[]; }
+function locInteresting(locs){ if(!locs.length) return true; const cities=locs.filter(l=>l!=="Remote"&&l!=="Hybrid"); if(locs.includes("Remote")&&!cities.length) return true; if(cities.some(c=>OFFICE.includes(c))) return true; if(!cities.length) return true; return false; }
+
+function recommend(r){
+  const ta=topArea(r), svc=ta.pct, bc=consOf(r)[0], cons=bc?bc.match_percent:null, rn=r.relationship_level?REL[r.relationship_level].n:null, locs=locsOf(r), locGood=locInteresting(locs);
+  const factors=[{label:"Tjeneste",val:svc+"%",tone:tone(svc)}];
+  if(cons!=null) factors.push({label:"Konsulent",val:cons+"%",tone:tone(cons)});
+  if(rn!=null) factors.push({label:"Relasjon",val:REL[r.relationship_level].label,tone:rn>=3?"good":rn===2?"mid":"bad"});
+  if(locs.length) factors.push({label:"Lokasjon",val:locs.join(" / "),tone:locGood?"good":"bad"});
+  if(svc<35) return {verdict:"avvis", why:`Tjenestematch bare ${svc}% – utenfor Figments tjenesteområder.`, factors};
+  let pts=0;
+  pts += svc>=70?2:svc>=50?1:0;
+  if(cons!=null) pts += cons>=70?2:cons>=50?1:0; else pts+=1;
+  if(rn!=null && rn>=3) pts+=1;
+  if(locGood) pts+=1;
+  const neg=[];
+  if(rn!=null&&rn<3) neg.push("svak relasjon");
+  if(locs.length&&!locGood) neg.push(`${locs.join("/")} er mindre prioritert`);
+  if(cons!=null&&cons<50) neg.push("svak konsulentmatch");
+  let verdict = pts>=5?"kvalifiser":pts<=2?"avvis":"vurder";
+  let why = verdict==="kvalifiser" ? `Høy match på tjeneste (${svc}%)${cons!=null?` og konsulent (${cons}%)`:""}.`
+          : verdict==="vurder" ? `Lovende fagmatch, men ${neg.join(" og ")||"noe usikkerhet"} trekker ned.`
+          : `Svak samlet match${neg.length?`: ${neg.join(", ")}`:""}.`;
+  return {verdict, why, factors};
+}
+
+// ---------- Datahenting ----------
+async function loadData(){
+  const sel = `id,subject,from_email,from_name,to_email,received_at,deadline,status,total_score,locations,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,`
+    + `match_scores(score,reasoning,service_areas(key,name)),`
+    + `consultant_matches(match_percent,reasoning,consultants(name,title,location,years_experience,skills,certifications,summary))`;
+  const [{data:reqs, error:e1}, {data:accs}, {data:doms}] = await Promise.all([
+    sb.from("requests").select(sel).order("total_score",{ascending:false, nullsFirst:false}),
+    sb.from("inbox_accounts").select("*").order("email"),
+    sb.from("sender_domains").select("*").order("domain"),
+  ]);
+  if(e1){ toast("Kunne ikke hente data: "+e1.message); }
+  REQUESTS = reqs||[]; ACCOUNTS = accs||[]; DOMAINS = doms||[];
+  if(!selectedId || !REQUESTS.some(r=>r.id===selectedId)) selectedId = visible()[0]?.id || null;
+  render();
+}
+
+function afterLocation(){ if(!selLoc.size) return REQUESTS.slice(); return REQUESTS.filter(r=>locsOf(r).some(l=>selLoc.has(l))); }
+function counts(){ const b=afterLocation(); const c={ny:0,kvalifisert:0,avvist:0,feil:0,alle:b.length}; b.forEach(r=>{c[r.status]=(c[r.status]||0)+1}); return c; }
+function visible(){ let rs=afterLocation(); if(filter!=="alle") rs=rs.filter(r=>r.status===filter); return rs.sort((a,b)=>topArea(b).pct-topArea(a).pct); }
+function allLocations(){ const s=new Set(); REQUESTS.forEach(r=>locsOf(r).forEach(l=>s.add(l))); return [...s]; }
+
+// ---------- Render ----------
+function renderLoc(){
+  const locs=allLocations(); const f=$("locfilter");
+  if(!locs.length){ f.hidden=true; return; } f.hidden=false;
+  $("locchips").innerHTML = locs.map(l=>`<button class="locchip" data-loc="${esc(l)}" aria-pressed="${selLoc.has(l)}">${esc(l)} <span class="cnt">${REQUESTS.filter(r=>locsOf(r).includes(l)).length}</span></button>`).join("");
+  $("locclear").hidden = selLoc.size===0;
+}
+function renderTabs(){
+  const c=counts();
+  const defs=[["ny","Nye",c.ny],["kvalifisert","Kvalifiserte",c.kvalifisert],["avvist","Avviste",c.avvist],["alle","Alle",c.alle]];
+  $("tabs").innerHTML = defs.map(([k,l,n])=>`<button class="tab" aria-pressed="${filter===k}" data-f="${k}">${l} <span class="cnt">${n}</span></button>`).join("");
+}
+function renderList(){
+  const rs=visible();
+  if(!rs.length){ $("list").innerHTML='<div class="card empty">Ingen forespørsler i denne visningen.</div>'; return; }
+  $("list").innerHTML = rs.map(r=>{
+    const ta=topArea(r), rec=recommend(r), locs=locsOf(r), rl=r.relationship_level?REL[r.relationship_level]:null;
+    return `<button class="card item" data-id="${r.id}" aria-current="${selectedId===r.id}">
+      <div class="eyebrow">${esc(r.org_name||r.from_email||"Ukjent avsender")}</div>
+      <h3>${esc(r.subject||"(uten emne)")}</h3>
+      <div class="meta"><span>${esc((r.received_at||"").slice(0,10))}</span>${locs.length?`<span class="sep">·</span><span>${esc(locs.join(" / "))}</span>`:""}</div>
+      <div class="foot">
+        <div class="bestmatch"><span class="pct txt-${tier(ta.pct)}">${ta.pct}%</span><span class="nm">${esc(ta.name)}</span></div>
+        <span class="rec-pill ${REC[rec.verdict].pill}">Forslag: ${REC[rec.verdict].label}</span>
+      </div>
+      <div class="subrow">${rl?relMeter(r.relationship_level)+`<span>${esc(rl.label)} relasjon</span><span class="sep">·</span>`:""}<span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
+    </button>`;
+  }).join("");
+}
+function renderDetail(){
+  const wrap=$("detailWrap"); const r=REQUESTS.find(x=>x.id===selectedId);
+  if(!r){ wrap.innerHTML='<div class="detail"><div class="empty">Velg en forespørsel i listen.</div></div>'; return; }
+  const rec=recommend(r), rm=REC[rec.verdict];
+  const ss=scoresOf(r), bestKey=ss[0]?.service_areas?.key;
+  const svcHtml = ss.length ? ss.map(s=>{ const p=s.score,t=tier(p),nm=s.service_areas?.name||"—",isBest=s.service_areas?.key===bestKey;
+    return `<div class="svc-row"><div class="svc-name">${isBest?`<mark>${esc(nm)}</mark><span class="star">· beste match</span>`:esc(nm)}</div>
+      <div class="svc-pct txt-${t}">${p}%</div><div class="bar"><i class="tier-${t}" style="width:${p}%"></i></div>
+      <div class="svc-why">${esc(s.reasoning||"")}</div></div>`; }).join("")
+    : '<div class="muted-note">Ingen tjenestescore ennå.</div>';
+
+  const cs=consOf(r);
+  const consHtml = cs.length ? cs.map(cm=>{ const c=cm.consultants||{}, p=cm.match_percent;
+    return `<div class="cons-card"><div class="cons-top">
+        <div class="ring" style="background:conic-gradient(${ringColor(p)} ${p}%, var(--surface) 0)"><b>${p}%</b></div>
+        <div class="cons-id"><div class="nm">${esc(c.name)}</div><div class="ttl">${esc([c.title,c.location,c.years_experience?c.years_experience+" år":null].filter(Boolean).join(" · "))}</div></div></div>
+      <div class="cons-why">${esc(cm.reasoning||"")}</div>
+      ${c.summary?`<details class="cons-more"><summary>masterCV</summary><div class="cv">${esc(c.summary)}
+        <div class="tags">${(c.skills||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</div>
+        <div class="tags">${(c.certifications||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</div></div></details>`:""}
+      </div>`; }).join("")
+    : '<div class="muted-note">Ingen konsulentmatch ennå.</div>';
+
+  const rl=r.relationship_level?REL[r.relationship_level]:null, s=r.relationship_signals||{};
+  const sigChips = Object.keys(s).length ? [
+    ["deals","dealer"],["won","vunnet"],["activities","aktiviteter"],["emails","e-poster"],["contacts","kontakter"]
+  ].filter(([k])=>s[k]!=null).map(([k,l])=>`<span class="sig"><b>${esc(s[k])}</b> ${l}</span>`).join("") + (s.last_contact?`<span class="sig">Sist: <b>${esc(s.last_contact)}</b></span>`:"") : "";
+  const orgSection = (r.org_name||rl) ? `<div class="section"><h4>Foretak og relasjon</h4>
+      <div class="org"><div><div class="nm">${esc(r.org_name||"Ukjent foretak")}</div><div class="org-meta">${esc(r.contact_name||r.from_email||"")}</div></div></div>
+      ${rl?`<div class="relbox"><div class="relhead"><span class="relbadge">Relasjon: ${esc(rl.label)}</span>${relMeter(r.relationship_level,true)}</div>
+        ${sigChips?`<div class="signals">${sigChips}</div>`:""}</div>`:'<div class="relbox"><span class="muted-note">Ikke beriket fra Pipedrive ennå.</span></div>'}
+    </div>` : "";
+
+  let actionHtml;
+  if(r.status==="ny") actionHtml=`<div class="actions">
+      <button class="btn btn-primary" data-act="qualify">Kvalifiser → Pipedrive</button>
+      <button class="btn btn-ghost" data-act="reject">Avvis</button></div>`;
+  else if(r.status==="kvalifisert") actionHtml=`<div class="resolved"><span class="chip kvalifisert">Kvalifisert</span><span>Opprettet i Pipedrive${r.pipedrive_deal_id?` · deal ${esc(r.pipedrive_deal_id)}`:""}</span></div>`;
+  else if(r.status==="avvist") actionHtml=`<div class="resolved"><span class="chip avvist">Avvist</span><span>${esc(r.rejection_reason||"Avvist etter gjennomgang.")}</span></div>`;
+  else actionHtml=`<div class="resolved"><span class="chip feil">Feil</span><span>Noe gikk galt under scoring.</span></div>`;
+
+  const facHtml=rec.factors.map(f=>`<span class="fac ${f.tone}">${esc(f.label)} <b>${esc(f.val)}</b></span>`).join("");
+  wrap.innerHTML=`<div class="detail">
+    <div class="detail-hd"><div class="hdrow"><div><div class="eyebrow">${esc(r.org_name||r.from_email||"")}</div><h2>${esc(r.subject||"(uten emne)")}</h2></div>
+      <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
+      <div class="kv"><span>Fra <b>${esc(r.from_email||"")}</b></span><span>Til <b>${esc(r.to_email||"")}</b></span>
+        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}</div></div>
+    <div class="recbanner" style="--rcol:${rm.col}"><div class="recmain"><div class="recverdict">Anbefalt: ${rm.label}</div><div class="recwhy">${esc(rec.why)}</div></div><div class="recfactors">${facHtml}</div></div>
+    ${orgSection}
+    <div class="section"><h4>Epost</h4><div class="email">${esc(r.body_text||"(ingen tekst)")}</div></div>
+    <div class="section"><h4>Tjenestematch</h4>${svcHtml}</div>
+    <div class="section"><h4>Konsulentmatch</h4><div class="cons">${consHtml}</div></div>
+    <div class="section">${actionHtml}</div>
+  </div>`;
+}
+function renderSettings(){
+  const roleNote = me ? `${esc(me.email)}` : "—";
+  const accRows = ACCOUNTS.map(a=>`<div class="row"><div class="main"><div class="t">${esc(a.email)}</div><div class="s">IMAP · ${esc(a.imap_host||"—")}${a.last_sync?` · sist synk ${esc(a.last_sync.slice(0,16).replace("T"," "))}`:""}</div></div>
+      <div class="right"><span class="statusdot">${a.active?"Aktiv":"Av"}</span><button class="x" data-act="rm-account" data-id="${a.id}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen kontoer ennå.</div></div>';
+  const domRows = DOMAINS.map(d=>`<div class="row"><div class="main"><div class="t">${esc(d.domain)}</div><div class="s">${esc(d.label||"—")}</div></div>
+      <div class="right"><button class="x" data-act="rm-domain" data-id="${d.id}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen domener ennå.</div></div>';
+  $("settingsBody").innerHTML = `
+    <div class="panel"><div class="panel-hd"><h3>Brukere og tilgang</h3><p>Tilgang styres av Figment-innlogging. Bare @figment.no / @sonat.no-kontoer slipper inn.</p></div>
+      <div class="panel-bd"><div class="row"><div class="main"><div class="t">${roleNote}</div><div class="s">Pålogget nå</div></div><div class="right"><span class="statusdot">Pålogget</span></div></div></div></div>
+    <div class="panel"><div class="panel-hd"><h3>Tilkoblede kontoer</h3><p>Postkassene brokerne sender til. Passord ligger kun i polleren, aldri her.</p></div>
+      <div class="panel-bd">${accRows}<div class="addform"><input id="acc-email" type="email" placeholder="ny.konto@figment.no"><input id="acc-host" type="text" placeholder="imap.gmail.com"><button class="btn btn-ghost btn-sm" data-act="add-account">Legg til</button></div></div></div>
+    <div class="panel"><div class="panel-hd"><h3>Overvåkede avsenderdomener</h3><p>Bare e-post fra disse domenene plukkes opp.</p></div>
+      <div class="panel-bd">${domRows}<div class="addform"><input id="dom-domain" type="text" placeholder="domene.no"><input id="dom-label" type="text" placeholder="Brokernavn (valgfritt)"><button class="btn btn-ghost btn-sm" data-act="add-domain">Legg til</button></div></div></div>
+    <div class="panel dedup"><div class="panel-hd"><h3>Dublettkontroll</h3><p>Samme forespørsel registreres aldri to ganger.</p></div>
+      <div class="panel-bd"><ul><li>Unik på <b>Message-ID</b>.</li><li>Unik på <b>innhold-hash</b> (avsender + emne + tekst), også på tvers av kontoer.</li></ul></div></div>`;
+}
+function render(){
+  document.querySelectorAll("#viewnav button").forEach(b=>b.setAttribute("aria-current", String(b.dataset.view===view)));
+  $("viewRequests").hidden = view!=="requests"; $("viewSettings").hidden = view!=="settings";
+  if(view==="requests"){ renderLoc(); renderTabs(); renderList(); renderDetail(); } else renderSettings();
+}
+
+// ---------- Handlinger ----------
+function toast(m){ const el=$("toastMount"); el.innerHTML=`<div class="toast">${esc(m)}</div>`; setTimeout(()=>{if(el.firstChild)el.innerHTML="";},2800); }
+function closeModal(){ $("modalMount").innerHTML=""; }
+async function callFn(name, body){
+  const { data:{session} } = await sb.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, { method:"POST",
+    headers:{ "Content-Type":"application/json", apikey:SUPABASE_ANON, Authorization:`Bearer ${session.access_token}` },
+    body: JSON.stringify(body) });
+  let out={}; try{ out=await res.json(); }catch(_){}
+  if(!res.ok || out.error) throw new Error(out.error||("HTTP "+res.status));
+  return out;
+}
+async function doQualify(r){
+  const btn=document.querySelector('[data-act="qualify"]'); if(btn){btn.disabled=true;btn.textContent="Oppretter …";}
+  try{ await callFn("qualify-request",{request_id:r.id}); toast("Kvalifisert – deal opprettet i Pipedrive"); await loadData(); }
+  catch(e){ toast("Kvalifisering feilet: "+e.message); if(btn){btn.disabled=false;btn.textContent="Kvalifiser → Pipedrive";} }
+}
+function rejectModal(r){
+  $("modalMount").innerHTML=`<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-hd"><h3>Avvis forespørsel</h3></div>
+    <div class="modal-bd"><p class="muted-note">«${esc(r.subject||"")}» markeres som avvist.</p>
+      <div class="field"><label for="rr">Begrunnelse (valgfritt)</label><textarea id="rr" placeholder="F.eks. utenfor tjenesteområde …"></textarea></div></div>
+    <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button><button class="btn btn-primary" data-act="confirm-reject">Avvis</button></div></div></div>`;
+}
+async function doReject(r, reason){
+  try{ await callFn("reject-request",{request_id:r.id, reason}); toast("Forespørsel avvist"); closeModal(); await loadData(); }
+  catch(e){ toast("Avvisning feilet: "+e.message); }
+}
+
+// ---------- Hendelser ----------
+$("viewnav").addEventListener("click",e=>{ const b=e.target.closest("[data-view]"); if(b){ view=b.dataset.view; render(); }});
+$("locchips").addEventListener("click",e=>{ const b=e.target.closest("[data-loc]"); if(!b) return; const l=b.dataset.loc; selLoc.has(l)?selLoc.delete(l):selLoc.add(l); render(); });
+$("locclear").addEventListener("click",()=>{ selLoc.clear(); render(); });
+$("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if(b){ filter=b.dataset.f; render(); }});
+$("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b){ selectedId=b.dataset.id; render(); if(window.matchMedia("(max-width:860px)").matches) $("detailWrap").scrollIntoView({behavior:"smooth"}); }});
+$("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="qualify") doQualify(r); if(b.dataset.act==="reject") rejectModal(r); });
+$("modalMount").addEventListener("click",e=>{ const r=REQUESTS.find(x=>x.id===selectedId);
+  if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
+  if(r && e.target.closest('[data-act="confirm-reject"]')){ const t=$("rr"); doReject(r, (t&&t.value.trim())||""); }});
+$("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("[data-act]"); if(!b) return;
+  try{
+    if(b.dataset.act==="rm-account"){ await sb.from("inbox_accounts").delete().eq("id",b.dataset.id); await loadData(); }
+    if(b.dataset.act==="rm-domain"){ await sb.from("sender_domains").delete().eq("id",b.dataset.id); await loadData(); }
+    if(b.dataset.act==="add-account"){ const em=$("acc-email").value.trim(); if(em){ await sb.from("inbox_accounts").insert({email:em, imap_host:$("acc-host").value.trim()||null}); await loadData(); toast("Konto lagt til"); }}
+    if(b.dataset.act==="add-domain"){ const dm=$("dom-domain").value.trim().toLowerCase(); if(dm){ await sb.from("sender_domains").insert({domain:dm, label:$("dom-label").value.trim()||null}); await loadData(); toast("Domene lagt til"); }}
+  }catch(err){ toast("Handling feilet: "+err.message); }});
+$("logout").addEventListener("click",()=> sb.auth.signOut());
+$("loginbtn").addEventListener("click",()=> sb.auth.signInWithOAuth({ provider:"google", options:{ redirectTo: location.origin+location.pathname } }));
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); });
+
+// ---------- Innlogging ----------
+function showGate(state, email){
+  $("app").hidden=true; $("gate").hidden=false; $("gatespin").hidden=true; $("loginbtn").hidden=true;
+  if(state==="loading"){ $("gatemsg").textContent="Kobler til …"; $("gatespin").hidden=false; }
+  else if(state==="out"){ $("gatemsg").textContent="Logg inn med din Figment-konto for å se brokerforespørslene."; $("loginbtn").hidden=false; }
+  else if(state==="denied"){ $("gatemsg").textContent=`${email||"Kontoen"} har ikke tilgang. Bruk en @figment.no- eller @sonat.no-konto.`; $("loginbtn").hidden=false; }
+}
+function showApp(){
+  $("gate").hidden=true; $("app").hidden=false;
+  $("uname").textContent = me.user_metadata?.full_name || me.email || "Innlogget";
+  const av=$("uava"), url=me.user_metadata?.avatar_url;
+  if(url){ av.innerHTML=""; av.style.background=`center/cover url("${encodeURI(url)}")`; } else { av.textContent=initials(me.user_metadata?.full_name||me.email); }
+}
+async function handleSession(session){
+  if(!session){ me=null; showGate("out"); return; }
+  const email=(session.user.email||"").toLowerCase();
+  const ok = ALLOWED_DOMAINS.some(d=>email.endsWith("@"+d));
+  if(!ok){ await sb.auth.signOut(); showGate("denied", email); return; }
+  me = session.user; showApp(); await loadData();
+}
+async function init(){
+  showGate("loading");
+  sb.auth.onAuthStateChange((_evt, session)=>{ handleSession(session); });
+  const { data:{session} } = await sb.auth.getSession();
+  handleSession(session);
+}
+init();
+</script>
+</body>
+</html>
