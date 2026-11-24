@@ -2,9 +2,14 @@ name: Poll brokerforespørsler
 
 on:
   schedule:
-    # Hvert 5. minutt (UTC).
+    # Hvert 5. minutt (UTC). NB: GitHub kjører planlagte workflows "best effort"
+    # og struper hyppige cron-er hardt – kan hoppe over kjøringer i timevis.
+    # For pålitelig polling: trigg via repository_dispatch fra en ekstern
+    # planlegger (f.eks. Supabase pg_cron), se README.
     - cron: "*/5 * * * *"
   workflow_dispatch: {}
+  repository_dispatch:
+    types: [poll]
 
 jobs:
   poll:

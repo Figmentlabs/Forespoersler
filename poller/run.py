@@ -14,18 +14,25 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 # IMAP krever engelske måneds-forkortelser uansett systemspråk.
 _IMAP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+# Hvor mange dager tilbake IMAP-søket skal dekke. Dublettkontroll (UID +
+# innhold-hash) hindrer reprosessering, så et større vindu betyr bare at et
+# hull i cron-kjøringen (f.eks. natten over) hentes inn igjen – ingen e-post
+# går tapt permanent slik «kun i dag» risikerte ved dato-skifte.
+POLL_LOOKBACK_DAYS = int(os.getenv("POLL_LOOKBACK_DAYS", "3"))
 
-def imap_today() -> str:
-    t = date.today()
+
+def imap_since() -> str:
+    t = date.today() - timedelta(days=POLL_LOOKBACK_DAYS)
     return f"{t.day:02d}-{_IMAP_MONTHS[t.month - 1]}-{t.year}"
 
 # Last .env fra prosjektroten automatisk, så kjøring ikke krever `source .env`.
@@ -141,8 +148,9 @@ def process_account(
     key = f"{acc.email}:{acc.mailbox}"
     last_uid = store.get_last_uid(key)
     account_id = store.inbox_account_id(acc.email)
-    since = imap_today()
-    log.info("[%s] starter fra UID > %s, kun i dag (SINCE %s)", acc.email, last_uid, since)
+    since = imap_since()
+    log.info("[%s] starter fra UID > %s, siste %d dager (SINCE %s)",
+             acc.email, last_uid, POLL_LOOKBACK_DAYS, since)
 
     with ImapClient(acc.host, acc.port, acc.user, acc.password, acc.mailbox) as imap:
         messages = imap.fetch_since(last_uid, cfg.max_fetch, since_date=since)
