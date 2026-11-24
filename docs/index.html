@@ -376,6 +376,7 @@ function extractLinks(r){
     if(!/^https?:\/\//i.test(u)) continue;
     u=u.replace(/[.,;:]+$/,"");
     if(/unsubscribe|list-manage|\/opt[-_]?out|email[-_.]?preferences/i.test(u)) continue;
+    if(/fonts\.(googleapis|gstatic)\.com|schema\.org|\.w3\.org|\.(css|png|jpe?g|gif|svg|woff2?|ico|webp)(\?|#|$)/i.test(u)) continue;
     if(!seen.has(u)){ seen.add(u); out.push(u); }
     if(out.length>=15) break;
   }
