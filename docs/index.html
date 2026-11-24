@@ -367,12 +367,17 @@ function consSorted(r){
   });
 }
 function sameOppOf(r){ return r.opportunity_group_id ? REQUESTS.filter(x=>x.id!==r.id && x.opportunity_group_id===r.opportunity_group_id) : []; }
-function extractLinks(text){
-  const re=/https?:\/\/[^\s<>"')\]]+/gi, seen=new Set(), out=[];
-  for(const m of String(text||"").matchAll(re)){
-    const u=m[0].replace(/[.,;:]+$/,"");
+function extractLinks(r){
+  const urls=[];
+  for(const m of String(r.body_html||"").matchAll(/href\s*=\s*["']([^"']+)["']/gi)) urls.push(m[1]);
+  for(const m of String(r.body_text||"").matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) urls.push(m[0]);
+  const seen=new Set(), out=[];
+  for(let u of urls){
+    if(!/^https?:\/\//i.test(u)) continue;
+    u=u.replace(/[.,;:]+$/,"");
+    if(/unsubscribe|list-manage|\/opt[-_]?out|email[-_.]?preferences/i.test(u)) continue;
     if(!seen.has(u)){ seen.add(u); out.push(u); }
-    if(out.length>=12) break;
+    if(out.length>=15) break;
   }
   return out;
 }
@@ -406,7 +411,7 @@ function recommend(r){
 
 // ---------- Datahenting ----------
 async function loadData(){
-  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,`
+  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
     + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(name,title,location,years_experience,skills,certifications,summary))`;
@@ -524,7 +529,7 @@ function renderDetail(){
         <span class="nm">${esc(o.org_name||o.from_email||"Ukjent broker")}</span>
         <span class="s">${esc(o.title||o.subject||"")}</span></button>`).join("")}</div></div>` : "";
 
-  const links=extractLinks(r.body_text);
+  const links=extractLinks(r);
   const linksHtml = links.length ? `<div class="section"><h4>Lenker i e-posten</h4>
       <div class="linklist">${links.map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener" class="emaillink">${esc(u.length>72?u.slice(0,72)+"…":u)}</a>`).join("")}</div></div>` : "";
 
