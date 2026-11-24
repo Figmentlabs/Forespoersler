@@ -446,10 +446,10 @@ function recommend(r){
 
 // ---------- Datahenting ----------
 async function loadData(){
-  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
+  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,start_date,duration,assumed_product,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
     + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
-    + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(name,title,location,years_experience,skills,keywords,certifications,summary,flowcase_user_id))`;
+    + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(id,name,title,company,location,years_experience,skills,keywords,certifications,summary,flowcase_user_id))`;
   const [{data:reqs, error:e1}, {data:accs}, {data:doms}, {data:cons}, {data:skip}] = await Promise.all([
     sb.from("requests").select(sel).order("total_score",{ascending:false, nullsFirst:false}),
     sb.from("inbox_accounts").select("*").order("email"),
@@ -589,7 +589,7 @@ function renderDetail(){
     <div class="detail-hd"><div class="hdrow"><div><div class="eyebrow">${esc(r.org_name||r.from_email||"")}</div><h2>${esc(r.title||r.subject||"(uten emne)")}</h2></div>
       <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
       <div class="kv"><span>Fra <b>${esc(r.from_email||"")}</b></span><span>Til <b>${esc(r.to_email||"")}</b></span>
-        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${locsOf(r).length?`<span>Lokasjon <b>${esc(locsOf(r).join(" / "))}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div>${catHtml}</div>
+        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${locsOf(r).length?`<span>Lokasjon <b>${esc(locsOf(r).join(" / "))}</b></span>`:""}${r.start_date?`<span>Oppstart <b>${esc(r.start_date)}</b></span>`:""}${r.duration?`<span>Varighet <b>${esc(r.duration)}</b></span>`:""}${r.assumed_product?`<span>Antatt produkt <b>${esc(r.assumed_product)}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div>${catHtml}</div>
     <div class="section actionbar">${actionHtml}</div>
     <div class="recbanner" style="--rcol:${rm.col}"><div class="recmain"><div class="recverdict">Anbefalt: ${rm.label}</div><div class="recwhy">${esc(rec.why)}</div></div><div class="recfactors">${facHtml}</div></div>
     ${orgSection}
@@ -647,10 +647,26 @@ async function callFn(name, body){
   if(!res.ok || out.error) throw new Error(out.error||("HTTP "+res.status));
   return out;
 }
-async function doQualify(r){
-  const btn=document.querySelector('[data-act="qualify"]'); if(btn){btn.disabled=true;btn.textContent="Oppretter …";}
-  try{ await callFn("qualify-request",{request_id:r.id}); toast("Kvalifisert – deal opprettet i Pipedrive"); await loadData(); }
-  catch(e){ toast("Kvalifisering feilet: "+e.message); if(btn){btn.disabled=false;btn.textContent="Kvalifiser → Pipedrive";} }
+let pendingGroupBroker=null;
+function qualifyConsultantModal(r, isGroup){
+  const cs=consSorted(r), oppCities=new Set(cityList(r).map(c=>c.toLowerCase()));
+  const items = cs.length ? cs.map(cm=>{ const c=cm.consultants||{}; const near=oppCities.size&&oppCities.has((c.location||"").toLowerCase());
+    return `<button class="sameitem" data-act="pick-consultant" data-cid="${esc(c.id||'')}" data-rid="${r.id}" data-group="${isGroup?'1':''}">
+      <span class="nm">${esc(c.name||'Konsulent')}${near?' <span class="nearpill">📍 Nær</span>':''}</span>
+      <span class="s">${esc([c.title,c.company,c.location].filter(Boolean).join(' · '))} · match ${cm.match_percent||0}%</span></button>`; }).join("")
+    : '<p class="muted-note">Ingen konsulentmatch på denne. Du kan kvalifisere uten valgt konsulent.</p>';
+  $("modalMount").innerHTML=`<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-hd"><h3>Velg konsulent</h3></div>
+    <div class="modal-bd"><p class="muted-note">Konsulenten du velger settes på dealen, og konsulentens selskap blir label.</p>
+      <div class="samelist">${items}</div></div>
+    <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button>
+      <button class="btn btn-ghost btn-sm" data-act="pick-consultant" data-cid="" data-rid="${r.id}" data-group="${isGroup?'1':''}">Uten konsulent</button></div></div></div>`;
+}
+async function doQualify(r, consultant_id){
+  closeModal();
+  try{ await callFn("qualify-request",{request_id:r.id, consultant_id: consultant_id||undefined});
+    toast("Kvalifisert – deal opprettet i Pipedrive"); selectedId=null; await loadData(); }
+  catch(e){ toast("Kvalifisering feilet: "+e.message); }
 }
 let pendingReject=[];
 function rejectModal(members){
@@ -676,14 +692,15 @@ function qualifyChooseModal(members){
         <span class="s">${esc(m.from_email||"")} · match ${topArea(m).pct}%</span></button>`).join("")}</div></div>
     <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button></div></div></div>`;
 }
-async function doQualifyGroup(chosenId){
+async function doQualifyGroup(chosenId, consultant_id){
   const chosen = REQUESTS.find(x=>x.id===chosenId); if(!chosen) return;
   const rest = nyMembers(chosen).filter(m=>m.id!==chosenId);
+  closeModal();
   try{
-    await callFn("qualify-request",{request_id:chosenId});
+    await callFn("qualify-request",{request_id:chosenId, consultant_id: consultant_id||undefined});
     for(const m of rest){ await callFn("reject-request",{request_id:m.id, reason:"Valgt annen leverandør for samme oppdrag"}); }
-    toast("Kvalifisert hos "+(chosen.org_name||chosen.from_email||"leverandør")+(rest.length?` – ${rest.length} andre avvist`:""));
-    closeModal(); await loadData();
+    toast("Kvalifisert hos "+brokerName(chosen)+(rest.length?` – ${rest.length} andre avvist`:""));
+    selectedId=null; await loadData();
   }catch(e){ toast("Kvalifisering feilet: "+e.message); }
 }
 async function doMoveCat(r){
@@ -794,7 +811,7 @@ $("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); i
 $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="selectreq"){ selectedId=b.dataset.rid; render(); return; }
   if(b.dataset.act==="openatt"){ openAttachment(b.dataset.path, b.dataset.name); return; }
   if(b.dataset.act==="copy-fid"){ try{ navigator.clipboard.writeText(b.dataset.fid); toast("Flowcase-ID kopiert"); }catch(_){ toast("Kunne ikke kopiere"); } return; }
-  if(b.dataset.act==="qualify") doQualify(r);
+  if(b.dataset.act==="qualify") qualifyConsultantModal(r, false);
   if(b.dataset.act==="reject") rejectModal([r]);
   if(b.dataset.act==="qualify-group") qualifyChooseModal(nyMembers(r));
   if(b.dataset.act==="reject-group") rejectModal(nyMembers(r));
@@ -802,7 +819,8 @@ $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-ac
 $("modalMount").addEventListener("click",e=>{
   if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
   const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }
-  const pb=e.target.closest('[data-act="pick-broker"]'); if(pb){ doQualifyGroup(pb.dataset.rid); return; }
+  const pb=e.target.closest('[data-act="pick-broker"]'); if(pb){ pendingGroupBroker=pb.dataset.rid; qualifyConsultantModal(REQUESTS.find(x=>x.id===pb.dataset.rid), true); return; }
+  const pc=e.target.closest('[data-act="pick-consultant"]'); if(pc){ const cid=pc.dataset.cid||""; if(pc.dataset.group==="1"){ doQualifyGroup(pendingGroupBroker, cid); } else { doQualify(REQUESTS.find(x=>x.id===pc.dataset.rid), cid); } return; }
   if(e.target.closest('[data-act="confirm-reject"]')){ const t=$("rr"); doReject(pendingReject, (t&&t.value.trim())||""); }});
 $("modalMount").addEventListener("change",e=>{ if(e.target.id==="cv-file") onCvFile(e.target); });
 $("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("[data-act]"); if(!b) return;

@@ -192,6 +192,17 @@ class Store:
             {"opportunity_group_id": gid}
         ).eq("id", request_id).execute()
 
+    def update_request_engagement(
+        self, request_id: str, start_date: str | None, duration: str | None, assumed_product: str | None
+    ) -> None:
+        self.client.table("requests").update(
+            {
+                "start_date": start_date or None,
+                "duration": duration or None,
+                "assumed_product": assumed_product or None,
+            }
+        ).eq("id", request_id).execute()
+
     def update_request_category(
         self, request_id: str, category: str, confidence: int, reasoning: str | None
     ) -> None:

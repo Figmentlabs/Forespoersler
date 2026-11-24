@@ -203,6 +203,7 @@ def map_consultant(user: dict, cv: dict) -> dict:
         "flowcase_user_id": fid,
         "name": name,
         "title": pick(cv.get("title")) or None,
+        "company": user.get("office_name") or None,
         "location": location or None,
         "email": user.get("email") or cv.get("email"),
         "years_experience": years,

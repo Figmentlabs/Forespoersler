@@ -140,6 +140,9 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
         max(0, min(100, result.category_confidence)), result.category_reasoning or None,
     )
     store.update_request_location(request_id, result.locations)
+    store.update_request_engagement(
+        request_id, result.start_date, result.duration, result.assumed_product,
+    )
 
 
 def process_account(

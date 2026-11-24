@@ -73,6 +73,15 @@ Fastsett LOKASJON for oppdraget som en liste (locations): norske bynavn der \
 oppdraget skal utføres (f.eks. «Oslo», «Bergen», «Trondheim»), og i tillegg \
 «Remote» og/eller «Hybrid» der det er aktuelt. Tom liste hvis stedet ikke framgår.
 
+Trekk ut OPPSTART (start_date): når oppdraget starter, slik det framgår av \
+e-posten (f.eks. «2026-01-15», «januar 2026», «snarest»). Tom streng hvis ukjent.
+Trekk ut VARIGHET (duration): oppdragets varighet eller omfang (f.eks. «6 måneder», \
+«12 mnd + opsjon», «ca. 500 timer»). Tom streng hvis ukjent.
+Fastsett ANTATT PRODUKT (assumed_product): kort norsk etikett for tjenesten eller \
+leveransen Figment mest sannsynlig vil tilby på dette oppdraget (f.eks. \
+«Prosjektledelse», «Rådgivning», «Tjenestedesign»), typisk basert på beste \
+tjenesteområde og rollen.
+
 Er det listet opp andre åpne forespørsler under «Andre åpne forespørsler», vurder \
 om DENNE e-posten gjelder NØYAKTIG samme underliggende oppdrag (samme rolle hos \
 samme sluttkunde) som en av dem – brokere sender ofte ut samme oppdrag. I så fall, \
@@ -113,6 +122,9 @@ class ScoringResult:
     category_confidence: int = 0
     category_reasoning: str = ""
     locations: list[str] = field(default_factory=list)
+    start_date: str = ""
+    duration: str = ""
+    assumed_product: str = ""
     same_opportunity_id: str = ""
     consultants: list[ConsultantScore] = field(default_factory=list)
     summary: str = ""
@@ -188,12 +200,16 @@ def _schema(area_keys: list[str], cons_ids: list[str],
         "category_confidence": {"type": "integer"},
         "category_reasoning": {"type": "string"},
         "locations": {"type": "array", "items": {"type": "string"}},
+        "start_date": {"type": "string"},
+        "duration": {"type": "string"},
+        "assumed_product": {"type": "string"},
         "same_opportunity_id": {"type": "string", "enum": [""] + (candidate_ids or [])},
         "summary": {"type": "string"},
     }
     required = ["scores", "best_area_key", "total_score", "title", "domain",
                 "category", "category_confidence", "category_reasoning",
-                "locations", "same_opportunity_id", "summary"]
+                "locations", "start_date", "duration", "assumed_product",
+                "same_opportunity_id", "summary"]
     if cons_ids:
         props["consultants"] = {
             "type": "array",
@@ -308,6 +324,9 @@ class Scorer:
             category_confidence=int(data.get("category_confidence", 0) or 0),
             category_reasoning=data.get("category_reasoning", ""),
             locations=[str(x) for x in (data.get("locations") or []) if str(x).strip()],
+            start_date=data.get("start_date", "") or "",
+            duration=data.get("duration", "") or "",
+            assumed_product=data.get("assumed_product", "") or "",
             same_opportunity_id=data.get("same_opportunity_id", "") or "",
             consultants=cons,
             summary=data.get("summary", ""),
