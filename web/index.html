@@ -209,6 +209,18 @@ button.item[aria-current="true"]{border-color:var(--fg);box-shadow:0 0 0 1px var
 .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--inv-bg);color:var(--inv-fg);padding:13px 20px;border-radius:999px;font-size:14px;font-weight:500;z-index:60}
 .empty{padding:60px 24px;text-align:center;color:var(--muted)}
 .mockflag{font-size:12px;font-weight:500;color:var(--soft);background:var(--hl);border-radius:999px;padding:6px 11px}
+.actionbar{background:var(--surface)}
+.conrow{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.conrow:first-child{border-top:0}
+.conrow .cava{width:34px;height:34px;border-radius:50%;background:var(--ph);display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--soft);flex:0 0 auto}
+.conrow .main{min-width:0;flex:1}
+.conrow .t{font-weight:600;font-size:14.5px}
+.conrow .s{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conrow .right{display:flex;gap:10px;align-items:center}
+.linkbtn{border:0;background:transparent;color:var(--fg);font-size:13px;text-decoration:underline;text-underline-offset:2px;padding:4px}
+.field input{width:100%;min-height:40px;padding:0 12px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.hint{font-size:12.5px;color:var(--muted)}
+.parsebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border-radius:8px;padding:12px;font-size:13px}
 </style>
 </head>
 <body>
@@ -270,6 +282,7 @@ button.item[aria-current="true"]{border-color:var(--fg);box-shadow:0 0 0 1px var
 <div id="toastMount" aria-live="polite"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
 // ---------- Konfig (offentlig; anon-nøkkel er RLS-beskyttet) ----------
 const SUPABASE_URL = "https://wocrhuiyzrckxihqzrla.supabase.co";
@@ -297,7 +310,8 @@ const REC = { kvalifiser:{label:"Kvalifiser",col:"#3f7a35",pill:"rec-kvalifiser"
 const STATUS_LABELS = {ny:"Ny", kvalifisert:"Kvalifisert", avvist:"Avvist", feil:"Feil"};
 const OFFICE = ["Oslo","Bergen"];
 
-let REQUESTS = [], ACCOUNTS = [], DOMAINS = [];
+let REQUESTS = [], ACCOUNTS = [], DOMAINS = [], CONSULTS = [];
+let pendingCvPath = null;
 let view="requests", filter="ny", selLoc=new Set(), selectedId=null, me=null;
 
 const $ = id => document.getElementById(id);
@@ -341,13 +355,14 @@ async function loadData(){
   const sel = `id,subject,from_email,from_name,to_email,received_at,deadline,status,total_score,locations,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,consultants(name,title,location,years_experience,skills,certifications,summary))`;
-  const [{data:reqs, error:e1}, {data:accs}, {data:doms}] = await Promise.all([
+  const [{data:reqs, error:e1}, {data:accs}, {data:doms}, {data:cons}] = await Promise.all([
     sb.from("requests").select(sel).order("total_score",{ascending:false, nullsFirst:false}),
     sb.from("inbox_accounts").select("*").order("email"),
     sb.from("sender_domains").select("*").order("domain"),
+    sb.from("consultants").select("id,name,title,location,years_experience,email,skills,certifications,summary,master_cv,available").order("name"),
   ]);
   if(e1){ toast("Kunne ikke hente data: "+e1.message); }
-  REQUESTS = reqs||[]; ACCOUNTS = accs||[]; DOMAINS = doms||[];
+  REQUESTS = reqs||[]; ACCOUNTS = accs||[]; DOMAINS = doms||[]; CONSULTS = cons||[];
   if(!selectedId || !REQUESTS.some(r=>r.id===selectedId)) selectedId = visible()[0]?.id || null;
   render();
 }
@@ -433,12 +448,12 @@ function renderDetail(){
       <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
       <div class="kv"><span>Fra <b>${esc(r.from_email||"")}</b></span><span>Til <b>${esc(r.to_email||"")}</b></span>
         <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}</div></div>
+    <div class="section actionbar">${actionHtml}</div>
     <div class="recbanner" style="--rcol:${rm.col}"><div class="recmain"><div class="recverdict">Anbefalt: ${rm.label}</div><div class="recwhy">${esc(rec.why)}</div></div><div class="recfactors">${facHtml}</div></div>
     ${orgSection}
     <div class="section"><h4>Epost</h4><div class="email">${esc(r.body_text||"(ingen tekst)")}</div></div>
     <div class="section"><h4>Tjenestematch</h4>${svcHtml}</div>
     <div class="section"><h4>Konsulentmatch</h4><div class="cons">${consHtml}</div></div>
-    <div class="section">${actionHtml}</div>
   </div>`;
 }
 function renderSettings(){
@@ -450,6 +465,13 @@ function renderSettings(){
   $("settingsBody").innerHTML = `
     <div class="panel"><div class="panel-hd"><h3>Brukere og tilgang</h3><p>Tilgang styres av Figment-innlogging. Bare @figment.no / @sonat.no-kontoer slipper inn.</p></div>
       <div class="panel-bd"><div class="row"><div class="main"><div class="t">${roleNote}</div><div class="s">Pålogget nå</div></div><div class="right"><span class="statusdot">Pålogget</span></div></div></div></div>
+    <div class="panel"><div class="panel-hd"><h3>Konsulenter</h3><p>Legg til konsulenter, rediger navn og felt, og last opp CV-er.</p></div>
+      <div class="panel-bd">
+        ${CONSULTS.map(c=>`<div class="conrow"><div class="cava">${esc(initials(c.name))}</div>
+          <div class="main"><div class="t">${esc(c.name)}</div><div class="s">${esc([c.title,c.location].filter(Boolean).join(" · ")||"—")}</div></div>
+          <div class="right"><button class="linkbtn" data-act="edit-con" data-id="${c.id}">Rediger</button><button class="x" data-act="del-con" data-id="${c.id}" aria-label="Slett">×</button></div></div>`).join("") || '<div class="conrow"><div class="s">Ingen konsulenter ennå.</div></div>'}
+        <div class="addform"><button class="btn btn-ghost btn-sm" data-act="add-con">Legg til konsulent</button></div>
+      </div></div>
     <div class="panel"><div class="panel-hd"><h3>Tilkoblede kontoer</h3><p>Postkassene brokerne sender til. Passord ligger kun i polleren, aldri her.</p></div>
       <div class="panel-bd">${accRows}<div class="addform"><input id="acc-email" type="email" placeholder="ny.konto@figment.no"><input id="acc-host" type="text" placeholder="imap.gmail.com"><button class="btn btn-ghost btn-sm" data-act="add-account">Legg til</button></div></div></div>
     <div class="panel"><div class="panel-hd"><h3>Overvåkede avsenderdomener</h3><p>Bare e-post fra disse domenene plukkes opp.</p></div>
@@ -492,6 +514,82 @@ async function doReject(r, reason){
   catch(e){ toast("Avvisning feilet: "+e.message); }
 }
 
+// ---------- Konsulent-admin ----------
+async function extractCvText(file){
+  const name=(file.name||"").toLowerCase();
+  if(name.endsWith(".txt")) return await file.text();
+  if(name.endsWith(".docx") && window.JSZip){
+    const zip=await window.JSZip.loadAsync(await file.arrayBuffer());
+    const xml=await zip.file("word/document.xml").async("string");
+    return xml.replace(/<\/w:p>/g,"\n").replace(/<[^>]+>/g," ").replace(/[ \t]{2,}/g," ").trim();
+  }
+  return "";
+}
+async function onCvFile(input){
+  const file=input.files&&input.files[0]; if(!file) return;
+  const st=$("cv-status");
+  try{
+    st.textContent="Laster opp …";
+    const path=`${Date.now()}_${file.name.replace(/[^\w.\-]+/g,"_")}`;
+    const up=await sb.storage.from("cvs").upload(path, file, {upsert:true});
+    if(up.error) throw up.error;
+    pendingCvPath=path;
+    const text=await extractCvText(file);
+    if(!text){ st.textContent="Lastet opp (kan ikke tolkes automatisk – fyll inn feltene)."; return; }
+    st.textContent="Tolker CV med KI …";
+    const out=await callFn("parse-cv", {cv_text:text.slice(0,16000)});
+    const f=out.fields||out;
+    if(f.name && !$("c-name").value) $("c-name").value=f.name;
+    if(f.title) $("c-title").value=f.title;
+    if(f.location) $("c-loc").value=f.location;
+    if(f.years_experience) $("c-years").value=f.years_experience;
+    if(Array.isArray(f.skills)) $("c-skills").value=f.skills.join(", ");
+    if(Array.isArray(f.certifications)) $("c-certs").value=f.certifications.join(", ");
+    if(f.summary) $("c-summary").value=f.summary;
+    st.textContent="CV tolket – se over feltene og lagre.";
+  }catch(e){ st.textContent="CV lastet opp, men tolkning feilet ("+(e.message||e)+") – fyll inn manuelt."; }
+}
+function consultantModal(c){
+  c=c||{}; pendingCvPath=null;
+  const skills=(c.skills||[]).join(", "), certs=(c.certifications||[]).join(", ");
+  $("modalMount").innerHTML=`<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-hd"><h3>${c.id?"Rediger konsulent":"Ny konsulent"}</h3></div>
+    <div class="modal-bd">
+      <div class="parsebar"><span>Last opp CV (.docx/.txt) for å hente felt automatisk:</span>
+        <input type="file" id="cv-file" accept=".docx,.txt,.pdf"><span id="cv-status" class="hint"></span></div>
+      <div class="field"><label for="c-name">Navn</label><input id="c-name" type="text" value="${esc(c.name||"")}"></div>
+      <div class="field"><label for="c-title">Tittel</label><input id="c-title" type="text" value="${esc(c.title||"")}"></div>
+      <div class="field"><label for="c-loc">Lokasjon</label><input id="c-loc" type="text" value="${esc(c.location||"")}"></div>
+      <div class="field"><label for="c-years">År erfaring</label><input id="c-years" type="number" value="${c.years_experience??""}"></div>
+      <div class="field"><label for="c-skills">Ferdigheter (komma)</label><input id="c-skills" type="text" value="${esc(skills)}"></div>
+      <div class="field"><label for="c-certs">Sertifiseringer (komma)</label><input id="c-certs" type="text" value="${esc(certs)}"></div>
+      <div class="field"><label for="c-summary">Sammendrag (masterCV)</label><textarea id="c-summary">${esc(c.summary||"")}</textarea></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button>
+      <button class="btn btn-primary" data-act="save-con" data-id="${c.id||""}">Lagre</button></div>
+  </div></div>`;
+}
+async function saveConsultant(id){
+  const list=s=>s.split(",").map(x=>x.trim()).filter(Boolean);
+  const years=$("c-years").value.trim();
+  const row={
+    name:$("c-name").value.trim(),
+    title:$("c-title").value.trim()||null,
+    location:$("c-loc").value.trim()||null,
+    years_experience:years?parseInt(years,10):null,
+    skills:list($("c-skills").value),
+    certifications:list($("c-certs").value),
+    summary:$("c-summary").value.trim()||null,
+  };
+  if(!row.name){ toast("Navn er påkrevd"); return; }
+  if(pendingCvPath) row.master_cv={cv_path:pendingCvPath};
+  try{
+    if(id) await sb.from("consultants").update(row).eq("id", id);
+    else { row.available=true; await sb.from("consultants").insert(row); }
+    closeModal(); await loadData(); render(); toast(id?"Konsulent oppdatert":"Konsulent lagt til");
+  }catch(e){ toast("Lagring feilet: "+(e.message||e)); }
+}
+
 // ---------- Hendelser ----------
 $("viewnav").addEventListener("click",e=>{ const b=e.target.closest("[data-view]"); if(b){ view=b.dataset.view; render(); }});
 $("locchips").addEventListener("click",e=>{ const b=e.target.closest("[data-loc]"); if(!b) return; const l=b.dataset.loc; selLoc.has(l)?selLoc.delete(l):selLoc.add(l); render(); });
@@ -499,15 +597,21 @@ $("locclear").addEventListener("click",()=>{ selLoc.clear(); render(); });
 $("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if(b){ filter=b.dataset.f; render(); }});
 $("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b){ selectedId=b.dataset.id; render(); if(window.matchMedia("(max-width:860px)").matches) $("detailWrap").scrollIntoView({behavior:"smooth"}); }});
 $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="qualify") doQualify(r); if(b.dataset.act==="reject") rejectModal(r); });
-$("modalMount").addEventListener("click",e=>{ const r=REQUESTS.find(x=>x.id===selectedId);
+$("modalMount").addEventListener("click",e=>{
   if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
+  const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }
+  const r=REQUESTS.find(x=>x.id===selectedId);
   if(r && e.target.closest('[data-act="confirm-reject"]')){ const t=$("rr"); doReject(r, (t&&t.value.trim())||""); }});
+$("modalMount").addEventListener("change",e=>{ if(e.target.id==="cv-file") onCvFile(e.target); });
 $("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("[data-act]"); if(!b) return;
   try{
     if(b.dataset.act==="rm-account"){ await sb.from("inbox_accounts").delete().eq("id",b.dataset.id); await loadData(); }
     if(b.dataset.act==="rm-domain"){ await sb.from("sender_domains").delete().eq("id",b.dataset.id); await loadData(); }
     if(b.dataset.act==="add-account"){ const em=$("acc-email").value.trim(); if(em){ await sb.from("inbox_accounts").insert({email:em, imap_host:$("acc-host").value.trim()||null}); await loadData(); toast("Konto lagt til"); }}
     if(b.dataset.act==="add-domain"){ const dm=$("dom-domain").value.trim().toLowerCase(); if(dm){ await sb.from("sender_domains").insert({domain:dm, label:$("dom-label").value.trim()||null}); await loadData(); toast("Domene lagt til"); }}
+    if(b.dataset.act==="add-con"){ consultantModal(null); }
+    if(b.dataset.act==="edit-con"){ consultantModal(CONSULTS.find(c=>c.id===b.dataset.id)); }
+    if(b.dataset.act==="del-con"){ const c=CONSULTS.find(x=>x.id===b.dataset.id); if(!window.confirm("Slette "+(c?c.name:"konsulent")+"?")) return; await sb.from("consultants").delete().eq("id",b.dataset.id); await loadData(); render(); toast("Konsulent slettet"); }
   }catch(err){ toast("Handling feilet: "+err.message); }});
 $("logout").addEventListener("click",()=> sb.auth.signOut());
 $("loginbtn").addEventListener("click",()=> sb.auth.signInWithOAuth({ provider:"google", options:{ redirectTo: location.origin+location.pathname } }));
