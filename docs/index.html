@@ -374,7 +374,7 @@ function extractLinks(r){
   const seen=new Set(), out=[];
   for(let u of urls){
     if(!/^https?:\/\//i.test(u)) continue;
-    u=u.replace(/[.,;:]+$/,"");
+    u=u.replace(/&amp;/gi,"&").replace(/[.,;:]+$/,"");
     if(/unsubscribe|list-manage|\/opt[-_]?out|email[-_.]?preferences/i.test(u)) continue;
     if(/fonts\.(googleapis|gstatic)\.com|schema\.org|\.w3\.org|\.(css|png|jpe?g|gif|svg|woff2?|ico|webp)(\?|#|$)/i.test(u)) continue;
     if(!seen.has(u)){ seen.add(u); out.push(u); }
