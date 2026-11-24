@@ -142,6 +142,7 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
     store.update_request_location(request_id, result.locations)
     store.update_request_engagement(
         request_id, result.start_date, result.duration, result.assumed_product,
+        result.start_iso, result.end_iso,
     )
     store.set_customer(request_id, result.customer)
 

@@ -77,6 +77,10 @@ Trekk ut OPPSTART (start_date): når oppdraget starter, slik det framgår av \
 e-posten (f.eks. «2026-01-15», «januar 2026», «snarest»). Tom streng hvis ukjent.
 Trekk ut VARIGHET (duration): oppdragets varighet eller omfang (f.eks. «6 måneder», \
 «12 mnd + opsjon», «ca. 500 timer»). Tom streng hvis ukjent.
+Angi KONKRETE DATOER der de kan utledes: start_iso (oppstartsdato, format YYYY-MM-DD) \
+og end_iso (sluttdato, YYYY-MM-DD). Utled sluttdato fra eksplisitt sluttdato, eller fra \
+oppstart + varighet (f.eks. oppstart 2027-01-01 + «12 måneder» → 2027-12-31; «ut 2027» → \
+2027-12-31). Tom streng hvis datoen ikke kan fastslås konkret (f.eks. «snarest»).
 Fastsett KUNDE (customer): navnet på sluttkunden/oppdragsgiveren oppdraget gjelder, \
 hvis det framgår av e-posten (f.eks. «Helse Sør-Øst», «Skatteetaten», «DNB»). Tom \
 streng hvis bare brokeren er nevnt eller kunden ikke framgår.
@@ -128,6 +132,8 @@ class ScoringResult:
     customer: str = ""
     start_date: str = ""
     duration: str = ""
+    start_iso: str = ""
+    end_iso: str = ""
     assumed_product: str = ""
     same_opportunity_id: str = ""
     consultants: list[ConsultantScore] = field(default_factory=list)
@@ -207,13 +213,16 @@ def _schema(area_keys: list[str], cons_ids: list[str],
         "customer": {"type": "string"},
         "start_date": {"type": "string"},
         "duration": {"type": "string"},
+        "start_iso": {"type": "string"},
+        "end_iso": {"type": "string"},
         "assumed_product": {"type": "string"},
         "same_opportunity_id": {"type": "string", "enum": [""] + (candidate_ids or [])},
         "summary": {"type": "string"},
     }
     required = ["scores", "best_area_key", "total_score", "title", "domain",
                 "category", "category_confidence", "category_reasoning",
-                "locations", "customer", "start_date", "duration", "assumed_product",
+                "locations", "customer", "start_date", "duration",
+                "start_iso", "end_iso", "assumed_product",
                 "same_opportunity_id", "summary"]
     if cons_ids:
         props["consultants"] = {
@@ -332,6 +341,8 @@ class Scorer:
             customer=data.get("customer", "") or "",
             start_date=data.get("start_date", "") or "",
             duration=data.get("duration", "") or "",
+            start_iso=data.get("start_iso", "") or "",
+            end_iso=data.get("end_iso", "") or "",
             assumed_product=data.get("assumed_product", "") or "",
             same_opportunity_id=data.get("same_opportunity_id", "") or "",
             consultants=cons,

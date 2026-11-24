@@ -4,11 +4,18 @@ Bruker service_role-nøkkelen og omgår RLS. Kjøres kun server-side.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from supabase import Client, create_client
+
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _iso_or_none(v: str | None) -> str | None:
+    return v if (v and _ISO_DATE.match(v)) else None
 
 
 class Store:
@@ -199,13 +206,16 @@ class Store:
             ).eq("id", request_id).execute()
 
     def update_request_engagement(
-        self, request_id: str, start_date: str | None, duration: str | None, assumed_product: str | None
+        self, request_id: str, start_date: str | None, duration: str | None,
+        assumed_product: str | None, start_iso: str | None = None, end_iso: str | None = None,
     ) -> None:
         self.client.table("requests").update(
             {
                 "start_date": start_date or None,
                 "duration": duration or None,
                 "assumed_product": assumed_product or None,
+                "start_iso": _iso_or_none(start_iso),
+                "end_iso": _iso_or_none(end_iso),
             }
         ).eq("id", request_id).execute()
 

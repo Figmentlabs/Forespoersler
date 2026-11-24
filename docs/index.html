@@ -463,7 +463,7 @@ function recommend(r){
 
 // ---------- Datahenting ----------
 async function loadData(){
-  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,start_date,duration,assumed_product,customer_activity,customer_activity_signals,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
+  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,start_date,duration,start_iso,end_iso,assumed_product,customer_activity,customer_activity_signals,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
     + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(id,name,title,company,location,years_experience,skills,keywords,certifications,summary,flowcase_user_id))`;
@@ -614,7 +614,7 @@ function renderDetail(){
     <div class="detail-hd"><div class="hdrow"><div><div class="eyebrow">${esc(r.org_name||r.from_email||"")}</div><h2>${esc(r.title||r.subject||"(uten emne)")}</h2></div>
       <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
       <div class="kv"><span>Fra <b>${esc(r.from_email||"")}</b></span><span>Til <b>${esc(r.to_email||"")}</b></span>
-        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${locsOf(r).length?`<span>Lokasjon <b>${esc(locsOf(r).join(" / "))}</b></span>`:""}${r.start_date?`<span>Oppstart <b>${esc(r.start_date)}</b></span>`:""}${r.duration?`<span>Varighet <b>${esc(r.duration)}</b></span>`:""}${r.assumed_product?`<span>Antatt produkt <b>${esc(r.assumed_product)}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div>${catHtml}</div>
+        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${locsOf(r).length?`<span>Lokasjon <b>${esc(locsOf(r).join(" / "))}</b></span>`:""}${r.start_date?`<span>Oppstart <b>${esc(r.start_date)}</b></span>`:""}${r.end_iso?`<span>Sluttdato <b>${esc(r.end_iso)}</b></span>`:""}${r.duration?`<span>Varighet <b>${esc(r.duration)}</b></span>`:""}${r.assumed_product?`<span>Antatt produkt <b>${esc(r.assumed_product)}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div>${catHtml}</div>
     <div class="section actionbar">${actionHtml}</div>
     <div class="recbanner" style="--rcol:${rm.col}"><div class="recmain"><div class="recverdict">Anbefalt: ${rm.label}</div><div class="recwhy">${esc(rec.why)}</div></div><div class="recfactors">${facHtml}</div></div>
     ${orgSection}
