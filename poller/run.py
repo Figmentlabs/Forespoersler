@@ -169,6 +169,7 @@ def process_account(
 
         if cfg.filter_domains and domains and domain_of(mail.from_email) not in domains:
             log.info("[%s] hopper over ikke-overvåket avsender: %s", acc.email, mail.from_email)
+            store.record_skipped(domain_of(mail.from_email), mail.from_email, mail.subject)
             continue
 
         chash = content_hash(mail)

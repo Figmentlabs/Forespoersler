@@ -36,6 +36,17 @@ class Store:
         )
         return res.data or []
 
+    def record_skipped(self, domain: str, from_email: str | None, subject: str | None) -> None:
+        """Logg et avsender-domene som ble filtrert bort (for UI-et «Hoppet over»)."""
+        if not domain:
+            return
+        try:
+            self.client.rpc("record_skipped_sender", {
+                "p_domain": domain, "p_from": from_email, "p_subject": subject,
+            }).execute()
+        except Exception:
+            pass
+
     def open_candidates(self, exclude_id: str, days: int = 30, limit: int = 40) -> list[dict[str, Any]]:
         """Nylige forespørsler (ekskl. den aktuelle) – kandidater for «samme oppdrag»."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()

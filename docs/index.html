@@ -91,6 +91,12 @@ input{font:inherit;color:var(--fg)}
 .card{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:16px;text-align:left;width:100%}
 .card:hover{border-color:var(--line-strong)}
 button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px var(--green)}
+.card.stacked{position:relative;margin-bottom:14px}
+.card.stacked::before,.card.stacked::after{content:"";position:absolute;inset:0;border-radius:14px;background:var(--card);border:1px solid var(--line);z-index:-1}
+.card.stacked::before{transform:translateY(6px) scaleX(.965)}
+.card.stacked::after{transform:translateY(12px) scaleX(.93)}
+.stackbadge{position:absolute;top:14px;right:14px;font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--green);border-radius:999px;padding:3px 10px}
+.samemark{color:#7fd9b8;font-weight:600}
 .item .eyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .item h3{font-size:17.5px;font-weight:600;line-height:1.25;margin:6px 0 10px}
 .item .meta{font-size:13px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
@@ -341,7 +347,7 @@ const OFFICE = ["Oslo","Bergen"];
 const PIPEDRIVE_DOMAIN = "sonat";
 const dealUrl = id => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${encodeURIComponent(id)}`;
 
-let REQUESTS = [], ACCOUNTS = [], DOMAINS = [], CONSULTS = [];
+let REQUESTS = [], ACCOUNTS = [], DOMAINS = [], CONSULTS = [], SKIPPED = [];
 let pendingCvPath = null;
 let view="requests", filter="ny", selCat="klar", selLoc=new Set(), selectedId=null, me=null;
 const CATLABEL = {klar:"Verifiserte forespørsler", mulig:"Mulige forespørsler"};
@@ -367,6 +373,22 @@ function consSorted(r){
   });
 }
 function sameOppOf(r){ return r.opportunity_group_id ? REQUESTS.filter(x=>x.id!==r.id && x.opportunity_group_id===r.opportunity_group_id) : []; }
+function groupMembers(r){ return r.opportunity_group_id ? REQUESTS.filter(x=>x.opportunity_group_id===r.opportunity_group_id) : [r]; }
+function nyMembers(r){ return groupMembers(r).filter(m=>m.status==="ny"); }
+function groupVisible(){
+  const rs=visible(), seen=new Set(), out=[];
+  for(const r of rs){
+    const gid=r.opportunity_group_id;
+    if(gid){
+      if(seen.has(gid)) continue;
+      seen.add(gid);
+      const members=rs.filter(x=>x.opportunity_group_id===gid);
+      const rep=members.slice().sort((a,b)=>topArea(b).pct-topArea(a).pct)[0];
+      out.push({rep, members});
+    } else out.push({rep:r, members:[r]});
+  }
+  return out;
+}
 function extractLinks(r){
   const urls=[];
   for(const m of String(r.body_html||"").matchAll(/href\s*=\s*["']([^"']+)["']/gi)) urls.push(m[1]);
@@ -416,14 +438,15 @@ async function loadData(){
     + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(name,title,location,years_experience,skills,certifications,summary))`;
-  const [{data:reqs, error:e1}, {data:accs}, {data:doms}, {data:cons}] = await Promise.all([
+  const [{data:reqs, error:e1}, {data:accs}, {data:doms}, {data:cons}, {data:skip}] = await Promise.all([
     sb.from("requests").select(sel).order("total_score",{ascending:false, nullsFirst:false}),
     sb.from("inbox_accounts").select("*").order("email"),
     sb.from("sender_domains").select("*").order("domain"),
     sb.from("consultants").select("id,name,title,location,years_experience,email,skills,certifications,summary,master_cv,available").order("name"),
+    sb.from("skipped_senders").select("*").order("last_seen",{ascending:false}),
   ]);
   if(e1){ toast("Kunne ikke hente data: "+e1.message); }
-  REQUESTS = reqs||[]; ACCOUNTS = accs||[]; DOMAINS = doms||[]; CONSULTS = cons||[];
+  REQUESTS = reqs||[]; ACCOUNTS = accs||[]; DOMAINS = doms||[]; CONSULTS = cons||[]; SKIPPED = skip||[];
   if(!selectedId || !REQUESTS.some(r=>r.id===selectedId)) selectedId = visible()[0]?.id || null;
   render();
 }
@@ -454,19 +477,22 @@ function renderTabs(){
   $("tabs").innerHTML = defs.map(([k,l,n])=>`<button class="tab" aria-pressed="${filter===k}" data-f="${k}">${l} <span class="cnt">${n}</span></button>`).join("");
 }
 function renderList(){
-  const rs=visible();
-  if(!rs.length){ $("list").innerHTML='<div class="card empty">Ingen forespørsler i denne visningen.</div>'; return; }
-  $("list").innerHTML = rs.map(r=>{
+  const entries=groupVisible();
+  if(!entries.length){ $("list").innerHTML='<div class="card empty">Ingen forespørsler i denne visningen.</div>'; return; }
+  $("list").innerHTML = entries.map(({rep:r, members})=>{
     const ta=topArea(r), rec=recommend(r), locs=locsOf(r), rl=r.relationship_level?REL[r.relationship_level]:null;
-    return `<button class="card item" data-id="${r.id}" aria-current="${selectedId===r.id}">
-      <div class="eyebrow">${esc(r.org_name||r.from_email||"Ukjent avsender")}</div>
+    const grouped=members.length>1;
+    const brokers=[...new Set(members.map(m=>m.org_name||m.from_email||"Ukjent"))];
+    return `<button class="card item${grouped?' stacked':''}" data-id="${r.id}" aria-current="${selectedId===r.id}">
+      ${grouped?`<span class="stackbadge">${members.length} brokere</span>`:""}
+      <div class="eyebrow">${esc(grouped?brokers.slice(0,2).join(", ")+(brokers.length>2?` +${brokers.length-2}`:""):(r.org_name||r.from_email||"Ukjent avsender"))}</div>
       <h3>${esc(r.title||r.subject||"(uten emne)")}</h3>
       <div class="meta"><span>${esc((r.received_at||"").slice(0,10))}</span>${locs.length?`<span class="sep">·</span><span>${esc(locs.join(" / "))}</span>`:""}</div>
       <div class="foot">
         <div class="bestmatch"><span class="pct txt-${tier(ta.pct)}">${ta.pct}%</span><span class="nm">${esc(ta.name)}</span></div>
         <span class="rec-pill ${REC[rec.verdict].pill}">Forslag: ${REC[rec.verdict].label}</span>
       </div>
-      <div class="subrow">${rl?relMeter(r.relationship_level)+`<span>${esc(rl.label)} relasjon</span><span class="sep">·</span>`:""}<span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
+      <div class="subrow">${rl?relMeter(r.relationship_level)+`<span>${esc(rl.label)} relasjon</span><span class="sep">·</span>`:""}<span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span>${grouped?`<span class="sep">·</span><span class="samemark">samme oppdrag</span>`:""}</div>
     </button>`;
   }).join("");
 }
@@ -507,9 +533,16 @@ function renderDetail(){
     </div>` : "";
 
   let actionHtml;
-  if(r.status==="ny") actionHtml=`<div class="actions">
-      <button class="btn btn-primary" data-act="qualify">Kvalifiser → Pipedrive</button>
-      <button class="btn btn-ghost" data-act="reject">Avvis</button></div>`;
+  if(r.status==="ny"){
+    const ny=nyMembers(r);
+    actionHtml = ny.length>1
+      ? `<div class="actions">
+          <button class="btn btn-primary" data-act="qualify-group">Kvalifiser → velg leverandør</button>
+          <button class="btn btn-ghost" data-act="reject-group">Avvis alle (${ny.length})</button></div>`
+      : `<div class="actions">
+          <button class="btn btn-primary" data-act="qualify">Kvalifiser → Pipedrive</button>
+          <button class="btn btn-ghost" data-act="reject">Avvis</button></div>`;
+  }
   else if(r.status==="kvalifisert") actionHtml=`<div class="resolved"><span class="chip kvalifisert">Kvalifisert</span>
       <span class="lockmsg">🔒 Låst for redigering – opprettet i Pipedrive${r.pipedrive_deal_id?` (deal ${esc(r.pipedrive_deal_id)})`:""}.</span>
       ${r.pipedrive_deal_id?`<a class="btn btn-ghost btn-sm" href="${dealUrl(r.pipedrive_deal_id)}" target="_blank" rel="noopener">Åpne deal i Pipedrive →</a>`:""}</div>`;
@@ -561,6 +594,9 @@ function renderSettings(){
       <div class="right"><span class="statusdot">${a.active?"Aktiv":"Av"}</span><button class="x" data-act="rm-account" data-id="${a.id}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen kontoer ennå.</div></div>';
   const domRows = DOMAINS.map(d=>`<div class="row"><div class="main"><div class="t">${esc(d.domain)}</div><div class="s">${esc(d.label||"—")}</div></div>
       <div class="right"><button class="x" data-act="rm-domain" data-id="${d.id}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen domener ennå.</div></div>';
+  const monitored = new Set(DOMAINS.map(d=>(d.domain||"").toLowerCase()));
+  const skipRows = SKIPPED.filter(s=>!monitored.has((s.domain||"").toLowerCase())).map(s=>`<div class="row"><div class="main"><div class="t">${esc(s.domain)}</div><div class="s">${esc(s.example_from||"")}${s.times_seen?` · sett ${s.times_seen}×`:""}${s.example_subject?` · «${esc((s.example_subject||"").slice(0,44))}»`:""}</div></div>
+      <div class="right"><button class="btn btn-ghost btn-sm" data-act="add-skipped" data-domain="${esc(s.domain)}">Legg til</button><button class="x" data-act="dismiss-skipped" data-domain="${esc(s.domain)}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen filtrerte avsendere registrert ennå.</div></div>';
   $("settingsBody").innerHTML = `
     <div class="panel"><div class="panel-hd"><h3>Brukere og tilgang</h3><p>Tilgang styres av Figment-innlogging. Bare @figment.no / @sonat.no-kontoer slipper inn.</p></div>
       <div class="panel-bd"><div class="row"><div class="main"><div class="t">${roleNote}</div><div class="s">Pålogget nå</div></div><div class="right"><span class="statusdot">Pålogget</span></div></div></div></div>
@@ -575,6 +611,8 @@ function renderSettings(){
       <div class="panel-bd">${accRows}<div class="addform"><input id="acc-email" type="email" placeholder="ny.konto@figment.no"><input id="acc-host" type="text" placeholder="imap.gmail.com"><button class="btn btn-ghost btn-sm" data-act="add-account">Legg til</button></div></div></div>
     <div class="panel"><div class="panel-hd"><h3>Overvåkede avsenderdomener</h3><p>Bare e-post fra disse domenene plukkes opp.</p></div>
       <div class="panel-bd">${domRows}<div class="addform"><input id="dom-domain" type="text" placeholder="domene.no"><input id="dom-label" type="text" placeholder="Brokernavn (valgfritt)"><button class="btn btn-ghost btn-sm" data-act="add-domain">Legg til</button></div></div></div>
+    <div class="panel"><div class="panel-hd"><h3>Hoppet over avsendere</h3><p>Domener polleren nylig filtrerte bort. Hører et oppdrag hjemme her, legg domenet til med ett klikk.</p></div>
+      <div class="panel-bd">${skipRows}</div></div>
     <div class="panel dedup"><div class="panel-hd"><h3>Dublettkontroll</h3><p>Samme forespørsel registreres aldri to ganger.</p></div>
       <div class="panel-bd"><ul><li>Unik på <b>Message-ID</b>.</li><li>Unik på <b>innhold-hash</b> (avsender + emne + tekst), også på tvers av kontoer.</li></ul></div></div>`;
 }
@@ -601,16 +639,39 @@ async function doQualify(r){
   try{ await callFn("qualify-request",{request_id:r.id}); toast("Kvalifisert – deal opprettet i Pipedrive"); await loadData(); }
   catch(e){ toast("Kvalifisering feilet: "+e.message); if(btn){btn.disabled=false;btn.textContent="Kvalifiser → Pipedrive";} }
 }
-function rejectModal(r){
+let pendingReject=[];
+function rejectModal(members){
+  pendingReject = members.map(m=>m.id);
+  const multi = members.length>1;
   $("modalMount").innerHTML=`<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">
-    <div class="modal-hd"><h3>Avvis forespørsel</h3></div>
-    <div class="modal-bd"><p class="muted-note">«${esc(r.subject||"")}» markeres som avvist.</p>
+    <div class="modal-hd"><h3>${multi?`Avvis alle (${members.length})`:"Avvis forespørsel"}</h3></div>
+    <div class="modal-bd"><p class="muted-note">${multi?`Samme oppdrag fra ${members.length} brokere markeres som avvist.`:`«${esc(members[0].subject||"")}» markeres som avvist.`}</p>
       <div class="field"><label for="rr">Begrunnelse (valgfritt)</label><textarea id="rr" placeholder="F.eks. utenfor tjenesteområde …"></textarea></div></div>
-    <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button><button class="btn btn-primary" data-act="confirm-reject">Avvis</button></div></div></div>`;
+    <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button><button class="btn btn-primary" data-act="confirm-reject">${multi?"Avvis alle":"Avvis"}</button></div></div></div>`;
 }
-async function doReject(r, reason){
-  try{ await callFn("reject-request",{request_id:r.id, reason}); toast("Forespørsel avvist"); closeModal(); await loadData(); }
+async function doReject(ids, reason){
+  try{ for(const id of ids){ await callFn("reject-request",{request_id:id, reason}); }
+    toast(ids.length>1?`Avviste ${ids.length} forespørsler`:"Forespørsel avvist"); closeModal(); await loadData(); }
   catch(e){ toast("Avvisning feilet: "+e.message); }
+}
+function qualifyChooseModal(members){
+  $("modalMount").innerHTML=`<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-hd"><h3>Velg leverandør</h3></div>
+    <div class="modal-bd"><p class="muted-note">Samme oppdrag fra ${members.length} brokere. Velg hvem du kvalifiserer – de andre avvises automatisk.</p>
+      <div class="samelist">${members.map(m=>`<button class="sameitem" data-act="pick-broker" data-rid="${m.id}">
+        <span class="nm">${esc(m.org_name||m.from_email||"Ukjent broker")}</span>
+        <span class="s">${esc(m.title||m.subject||"")} · match ${topArea(m).pct}%</span></button>`).join("")}</div></div>
+    <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button></div></div></div>`;
+}
+async function doQualifyGroup(chosenId){
+  const chosen = REQUESTS.find(x=>x.id===chosenId); if(!chosen) return;
+  const rest = nyMembers(chosen).filter(m=>m.id!==chosenId);
+  try{
+    await callFn("qualify-request",{request_id:chosenId});
+    for(const m of rest){ await callFn("reject-request",{request_id:m.id, reason:"Valgt annen leverandør for samme oppdrag"}); }
+    toast("Kvalifisert hos "+(chosen.org_name||chosen.from_email||"leverandør")+(rest.length?` – ${rest.length} andre avvist`:""));
+    closeModal(); await loadData();
+  }catch(e){ toast("Kvalifisering feilet: "+e.message); }
 }
 async function doMoveCat(r){
   const to=(catOf(r)==="klar")?"mulig":"klar";
@@ -719,12 +780,16 @@ $("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if
 $("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b){ selectedId=b.dataset.id; render(); if(window.matchMedia("(max-width:860px)").matches) $("detailWrap").scrollIntoView({behavior:"smooth"}); }});
 $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="selectreq"){ selectedId=b.dataset.rid; render(); return; }
   if(b.dataset.act==="openatt"){ openAttachment(b.dataset.path, b.dataset.name); return; }
-  if(b.dataset.act==="qualify") doQualify(r); if(b.dataset.act==="reject") rejectModal(r); if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r); });
+  if(b.dataset.act==="qualify") doQualify(r);
+  if(b.dataset.act==="reject") rejectModal([r]);
+  if(b.dataset.act==="qualify-group") qualifyChooseModal(nyMembers(r));
+  if(b.dataset.act==="reject-group") rejectModal(nyMembers(r));
+  if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r); });
 $("modalMount").addEventListener("click",e=>{
   if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
   const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }
-  const r=REQUESTS.find(x=>x.id===selectedId);
-  if(r && e.target.closest('[data-act="confirm-reject"]')){ const t=$("rr"); doReject(r, (t&&t.value.trim())||""); }});
+  const pb=e.target.closest('[data-act="pick-broker"]'); if(pb){ doQualifyGroup(pb.dataset.rid); return; }
+  if(e.target.closest('[data-act="confirm-reject"]')){ const t=$("rr"); doReject(pendingReject, (t&&t.value.trim())||""); }});
 $("modalMount").addEventListener("change",e=>{ if(e.target.id==="cv-file") onCvFile(e.target); });
 $("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("[data-act]"); if(!b) return;
   try{
@@ -732,6 +797,8 @@ $("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("
     if(b.dataset.act==="rm-domain"){ await sb.from("sender_domains").delete().eq("id",b.dataset.id); await loadData(); }
     if(b.dataset.act==="add-account"){ const em=$("acc-email").value.trim(); if(em){ await sb.from("inbox_accounts").insert({email:em, imap_host:$("acc-host").value.trim()||null}); await loadData(); toast("Konto lagt til"); }}
     if(b.dataset.act==="add-domain"){ const dm=$("dom-domain").value.trim().toLowerCase(); if(dm){ await sb.from("sender_domains").insert({domain:dm, label:$("dom-label").value.trim()||null}); await loadData(); toast("Domene lagt til"); }}
+    if(b.dataset.act==="add-skipped"){ const dm=(b.dataset.domain||"").toLowerCase(); if(dm){ await sb.from("sender_domains").insert({domain:dm}); await sb.from("skipped_senders").delete().eq("domain",dm); await loadData(); toast("La til "+dm); }}
+    if(b.dataset.act==="dismiss-skipped"){ await sb.from("skipped_senders").delete().eq("domain",b.dataset.domain); await loadData(); }
     if(b.dataset.act==="add-con"){ consultantModal(null); }
     if(b.dataset.act==="edit-con"){ consultantModal(CONSULTS.find(c=>c.id===b.dataset.id)); }
     if(b.dataset.act==="del-con"){ const c=CONSULTS.find(x=>x.id===b.dataset.id); if(!window.confirm("Slette "+(c?c.name:"konsulent")+"?")) return; await sb.from("consultants").delete().eq("id",b.dataset.id); await loadData(); render(); toast("Konsulent slettet"); }
