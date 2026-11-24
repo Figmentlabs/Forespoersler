@@ -189,6 +189,7 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
 .btn-ghost{background:transparent;color:var(--fg);border-color:var(--line-strong)}
 .btn-sm{min-height:40px;padding:0 16px;font-size:14px}
 .resolved{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px;color:var(--soft)}
+.lockmsg{font-size:13.5px;color:var(--muted)}
 
 .settings{max-width:760px;padding-bottom:64px;display:flex;flex-direction:column;gap:20px}
 .panel{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--card)}
@@ -322,6 +323,8 @@ const REC = { kvalifiser:{label:"Kvalifiser",col:"#7fd9b8",pill:"rec-kvalifiser"
   vurder:{label:"Vurder",col:"#dbbd72",pill:"rec-vurder"}, avvis:{label:"Avvis",col:"#e39a9a",pill:"rec-avvis"} };
 const STATUS_LABELS = {ny:"Ny", kvalifisert:"Kvalifisert", avvist:"Avvist", feil:"Feil"};
 const OFFICE = ["Oslo","Bergen"];
+const PIPEDRIVE_DOMAIN = "sonat";
+const dealUrl = id => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${encodeURIComponent(id)}`;
 
 let REQUESTS = [], ACCOUNTS = [], DOMAINS = [], CONSULTS = [];
 let pendingCvPath = null;
@@ -464,8 +467,10 @@ function renderDetail(){
   if(r.status==="ny") actionHtml=`<div class="actions">
       <button class="btn btn-primary" data-act="qualify">Kvalifiser → Pipedrive</button>
       <button class="btn btn-ghost" data-act="reject">Avvis</button></div>`;
-  else if(r.status==="kvalifisert") actionHtml=`<div class="resolved"><span class="chip kvalifisert">Kvalifisert</span><span>Opprettet i Pipedrive${r.pipedrive_deal_id?` · deal ${esc(r.pipedrive_deal_id)}`:""}</span></div>`;
-  else if(r.status==="avvist") actionHtml=`<div class="resolved"><span class="chip avvist">Avvist</span><span>${esc(r.rejection_reason||"Avvist etter gjennomgang.")}</span></div>`;
+  else if(r.status==="kvalifisert") actionHtml=`<div class="resolved"><span class="chip kvalifisert">Kvalifisert</span>
+      <span class="lockmsg">🔒 Låst for redigering – opprettet i Pipedrive${r.pipedrive_deal_id?` (deal ${esc(r.pipedrive_deal_id)})`:""}.</span>
+      ${r.pipedrive_deal_id?`<a class="btn btn-ghost btn-sm" href="${dealUrl(r.pipedrive_deal_id)}" target="_blank" rel="noopener">Åpne deal i Pipedrive →</a>`:""}</div>`;
+  else if(r.status==="avvist") actionHtml=`<div class="resolved"><span class="chip avvist">Avvist</span><span>${esc(r.rejection_reason||"Avvist etter gjennomgang.")}</span><button class="btn btn-ghost btn-sm" data-act="reopen">Gjenåpne</button></div>`;
   else actionHtml=`<div class="resolved"><span class="chip feil">Feil</span><span>Noe gikk galt under scoring.</span></div>`;
 
   const facHtml=rec.factors.map(f=>`<span class="fac ${f.tone}">${esc(f.label)} <b>${esc(f.val)}</b></span>`).join("");
@@ -473,7 +478,7 @@ function renderDetail(){
   const catHtml=`<div class="catrow">
       <span class="catbadge cat-${cat}">${cat==="klar"?"Klar":"Mulig"} forespørsel</span>
       ${r.category_reasoning?`<span class="catwhy">${esc(r.category_reasoning)}</span>`:""}
-      <button class="btn btn-ghost btn-sm catmove" data-act="movecat">Flytt til ${catTo==="mulig"?"Mulige":"Klare"}</button></div>`;
+      ${r.status==="ny"?`<button class="btn btn-ghost btn-sm catmove" data-act="movecat">Flytt til ${catTo==="mulig"?"Mulige":"Klare"}</button>`:""}</div>`;
   wrap.innerHTML=`<div class="detail">
     <div class="detail-hd"><div class="hdrow"><div><div class="eyebrow">${esc(r.org_name||r.from_email||"")}</div><h2>${esc(r.title||r.subject||"(uten emne)")}</h2></div>
       <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
@@ -552,6 +557,11 @@ async function doMoveCat(r){
     toast(to==="klar"?"Flyttet til Klare forespørsler":"Flyttet til Mulige forespørsler");
     selectedId=null; await loadData();  // lær-signalet er lagret; gå videre i gjeldende liste
   }catch(e){ toast("Flytting feilet: "+e.message); if(btn) btn.disabled=false; }
+}
+async function doReopen(r){
+  const btn=document.querySelector('[data-act="reopen"]'); if(btn){ btn.disabled=true; btn.textContent="Gjenåpner …"; }
+  try{ await callFn("reopen-request",{request_id:r.id}); toast("Forespørsel gjenåpnet"); await loadData(); }
+  catch(e){ toast("Gjenåpning feilet: "+e.message); if(btn){ btn.disabled=false; btn.textContent="Gjenåpne"; } }
 }
 
 // ---------- Konsulent-admin ----------
@@ -637,7 +647,7 @@ $("locchips").addEventListener("click",e=>{ const b=e.target.closest("[data-loc]
 $("locclear").addEventListener("click",()=>{ selLoc.clear(); render(); });
 $("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if(b){ filter=b.dataset.f; render(); }});
 $("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b){ selectedId=b.dataset.id; render(); if(window.matchMedia("(max-width:860px)").matches) $("detailWrap").scrollIntoView({behavior:"smooth"}); }});
-$("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="qualify") doQualify(r); if(b.dataset.act==="reject") rejectModal(r); if(b.dataset.act==="movecat") doMoveCat(r); });
+$("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="qualify") doQualify(r); if(b.dataset.act==="reject") rejectModal(r); if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r); });
 $("modalMount").addEventListener("click",e=>{
   if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
   const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }
