@@ -30,7 +30,7 @@ class Store:
     def consultants(self) -> list[dict[str, Any]]:
         res = (
             self.client.table("consultants")
-            .select("id, name, title, skills, summary")
+            .select("id, name, title, skills, keywords, summary")
             .eq("available", True)
             .execute()
         )

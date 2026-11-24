@@ -34,6 +34,7 @@ def shortlist_consultants(consultants, subject, body, n=MAX_CONSULTANTS):
         bag = " ".join([
             c.get("title") or "",
             " ".join(c.get("skills") or []),
+            " ".join(c.get("keywords") or []),
             c.get("summary") or "",
         ]).lower()
         return len(qwords & set(_WORD.findall(bag)))
@@ -132,9 +133,11 @@ def _cons_block(cons: list[dict[str, Any]]) -> str:
     out = []
     for c in cons:
         skills = ", ".join(c.get("skills") or [])
+        kws = ", ".join(c.get("keywords") or [])
         out.append(
             f"- id: {c['id']}\n  navn: {c['name']}\n  rolle: {c.get('title','')}\n"
-            f"  ferdigheter: {skills}\n  sammendrag: {c.get('summary','')}"
+            f"  ferdigheter: {skills}\n  nøkkelord (hele CV, inkl. prosjekter): {kws}\n"
+            f"  sammendrag: {c.get('summary','')}"
         )
     return "\n".join(out)
 

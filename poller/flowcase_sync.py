@@ -138,6 +138,45 @@ def map_consultant(user: dict, cv: dict) -> dict:
     if yrs:
         years = max(0, dt.date.today().year - min(yrs))
 
+    # Nøkkelord fra HELE CV-en (inkl. prosjekterfaring) – til bruk i evaluering.
+    kw: list[str] = list(skills)
+    for c in cv.get("certifications") or []:
+        nm = pick(c.get("name"))
+        if nm:
+            kw.append(nm)
+    for kq in cv.get("key_qualifications") or []:
+        lbl = pick(kq.get("label"))
+        if lbl:
+            kw.append(lbl)
+    for p in cv.get("project_experiences") or []:
+        cust = pick(p.get("customer"))
+        if cust:
+            kw.append(cust)
+        for role in p.get("roles") or []:
+            rn = pick(role.get("name"))
+            if rn:
+                kw.append(rn)
+        for cat in p.get("project_experience_skills") or []:
+            for s in cat.get("project_experience_skills") or []:
+                tg = pick(s.get("tags"))
+                if tg:
+                    kw.append(tg)
+    for w in cv.get("work_experiences") or []:
+        emp = pick(w.get("employer"))
+        if emp:
+            kw.append(emp)
+    ttl = pick(cv.get("title"))
+    if ttl:
+        kw.append(ttl)
+    seen: set[str] = set()
+    keywords: list[str] = []
+    for k in kw:
+        k = (k or "").strip()
+        if k and k.lower() not in seen:
+            seen.add(k.lower())
+            keywords.append(k)
+    keywords = keywords[:80]
+
     fid = str(user.get("user_id") or user.get("id"))
     master_cv = {
         "flowcase_user_id": fid,
@@ -168,6 +207,7 @@ def map_consultant(user: dict, cv: dict) -> dict:
         "email": user.get("email") or cv.get("email"),
         "years_experience": years,
         "skills": skills,
+        "keywords": keywords,
         "certifications": certs,
         "summary": summary,
         "master_cv": master_cv,

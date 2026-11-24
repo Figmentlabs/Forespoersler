@@ -185,7 +185,12 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
 .cons-more summary::before{content:"CV  ▸ ";font-weight:600}
 .cons-more[open] summary::before{content:"CV  ▾ "}
 .cv{margin-top:10px;background:var(--surface);border-radius:8px;padding:14px;font-size:13px;color:var(--text)}
-.cv .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.cons-fid{display:inline-flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+.cons-fid code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+.copyfid{border:0;background:transparent;color:var(--soft);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:6px}
+.copyfid:hover{background:var(--surface);color:var(--fg)}
+.cvlabel{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-top:12px}
+.cv .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .cv .tag{font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--soft)}
 
 .actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
@@ -373,6 +378,13 @@ function consSorted(r){
   });
 }
 function sameOppOf(r){ return r.opportunity_group_id ? REQUESTS.filter(x=>x.id!==r.id && x.opportunity_group_id===r.opportunity_group_id) : []; }
+function domOf(email){ const p=(email||"").split("@"); return p.length>1?p[1].toLowerCase():""; }
+function brokerName(r){
+  const d=domOf(r.from_email), dom=DOMAINS.find(x=>(x.domain||"").toLowerCase()===d);
+  if(dom&&dom.label) return dom.label;
+  if(d){ const core=d.replace(/\.(com|no|org|io|net|se|dk|eu)$/i,"").split(".").pop(); return core?core.charAt(0).toUpperCase()+core.slice(1):d; }
+  return r.from_email||"Ukjent leverandør";
+}
 function groupMembers(r){ return r.opportunity_group_id ? REQUESTS.filter(x=>x.opportunity_group_id===r.opportunity_group_id) : [r]; }
 function nyMembers(r){ return groupMembers(r).filter(m=>m.status==="ny"); }
 function groupVisible(){
@@ -437,12 +449,12 @@ async function loadData(){
   const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
     + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
-    + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(name,title,location,years_experience,skills,certifications,summary))`;
+    + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(name,title,location,years_experience,skills,keywords,certifications,summary,flowcase_user_id))`;
   const [{data:reqs, error:e1}, {data:accs}, {data:doms}, {data:cons}, {data:skip}] = await Promise.all([
     sb.from("requests").select(sel).order("total_score",{ascending:false, nullsFirst:false}),
     sb.from("inbox_accounts").select("*").order("email"),
     sb.from("sender_domains").select("*").order("domain"),
-    sb.from("consultants").select("id,name,title,location,years_experience,email,skills,certifications,summary,master_cv,available").order("name"),
+    sb.from("consultants").select("id,name,title,location,years_experience,email,skills,keywords,certifications,summary,master_cv,available,flowcase_user_id").order("name"),
     sb.from("skipped_senders").select("*").order("last_seen",{ascending:false}),
   ]);
   if(e1){ toast("Kunne ikke hente data: "+e1.message); }
@@ -482,7 +494,7 @@ function renderList(){
   $("list").innerHTML = entries.map(({rep:r, members})=>{
     const ta=topArea(r), rec=recommend(r), locs=locsOf(r), rl=r.relationship_level?REL[r.relationship_level]:null;
     const grouped=members.length>1;
-    const brokers=[...new Set(members.map(m=>m.org_name||m.from_email||"Ukjent"))];
+    const brokers=[...new Set(members.map(m=>brokerName(m)))];
     return `<button class="card item${grouped?' stacked':''}" data-id="${r.id}" aria-current="${selectedId===r.id}">
       ${grouped?`<span class="stackbadge">${members.length} brokere</span>`:""}
       <div class="eyebrow">${esc(grouped?brokers.slice(0,2).join(", ")+(brokers.length>2?` +${brokers.length-2}`:""):(r.org_name||r.from_email||"Ukjent avsender"))}</div>
@@ -516,9 +528,10 @@ function renderDetail(){
         <div class="cons-id"><div class="nm">${esc(c.name)}${near?' <span class="nearpill">📍 Nær lokasjon</span>':''}</div><div class="ttl">${esc([c.title,c.location,c.years_experience?c.years_experience+" år":null].filter(Boolean).join(" · "))}</div></div></div>
       <div class="cons-why">${esc(cm.reasoning||"")}</div>
       ${cm.domain_level?`<div class="cons-domain">${relMeter(cm.domain_level)}<span>Domene: <b>${esc(REL[cm.domain_level].label)}</b>${cm.domain_reasoning?" — "+esc(cm.domain_reasoning):""}</span></div>`:""}
-      ${c.summary?`<details class="cons-more"><summary>masterCV</summary><div class="cv">${esc(c.summary)}
-        <div class="tags">${(c.skills||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</div>
-        <div class="tags">${(c.certifications||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</div></div></details>`:""}
+      ${c.flowcase_user_id?`<div class="cons-fid">Flowcase-ID <code>${esc(c.flowcase_user_id)}</code><button class="copyfid" data-act="copy-fid" data-fid="${esc(c.flowcase_user_id)}" title="Kopier">⧉</button></div>`:""}
+      ${(c.summary||(c.keywords||[]).length||(c.certifications||[]).length)?`<details class="cons-more"><summary>masterCV</summary><div class="cv">${c.summary?esc(c.summary):""}
+        ${(c.keywords||[]).length?`<div class="cvlabel">Nøkkelord (hele CV, inkl. prosjekter)</div><div class="tags">${(c.keywords||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</div>`:""}
+        ${(c.certifications||[]).length?`<div class="cvlabel">Sertifiseringer</div><div class="tags">${(c.certifications||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</div>`:""}</div></details>`:""}
       </div>`; }).join("")
     : '<div class="muted-note">Ingen konsulentmatch ennå.</div>';
 
@@ -560,8 +573,8 @@ function renderDetail(){
   const sameOppHtml = sameOpp.length ? `<div class="section"><h4>Samme, mulige oppdrag</h4>
       <div class="muted-note" style="margin-bottom:12px">Ser ut til å være samme oppdrag fra flere brokere:</div>
       <div class="samelist">${sameOpp.map(o=>`<button class="sameitem" data-act="selectreq" data-rid="${o.id}">
-        <span class="nm">${esc(o.org_name||o.from_email||"Ukjent broker")}</span>
-        <span class="s">${esc(o.title||o.subject||"")}</span></button>`).join("")}</div></div>` : "";
+        <span class="nm">${esc(brokerName(o))}</span>
+        <span class="s">${esc(o.from_email||"")} · ${esc(o.title||o.subject||"")}</span></button>`).join("")}</div></div>` : "";
 
   const links=extractLinks(r);
   const linksHtml = links.length ? `<div class="section"><h4>Lenker i e-posten</h4>
@@ -603,7 +616,7 @@ function renderSettings(){
     <div class="panel"><div class="panel-hd"><h3>Konsulenter</h3><p>Legg til konsulenter, rediger navn og felt, og last opp CV-er.</p></div>
       <div class="panel-bd">
         ${CONSULTS.map(c=>`<div class="conrow"><div class="cava">${esc(initials(c.name))}</div>
-          <div class="main"><div class="t">${esc(c.name)}</div><div class="s">${esc([c.title,c.location].filter(Boolean).join(" · ")||"—")}</div></div>
+          <div class="main"><div class="t">${esc(c.name)}</div><div class="s">${esc([c.title,c.location].filter(Boolean).join(" · ")||"—")}${c.flowcase_user_id?` · Flowcase ${esc(c.flowcase_user_id)}`:""}</div></div>
           <div class="right"><button class="linkbtn" data-act="edit-con" data-id="${c.id}">Rediger</button><button class="x" data-act="del-con" data-id="${c.id}" aria-label="Slett">×</button></div></div>`).join("") || '<div class="conrow"><div class="s">Ingen konsulenter ennå.</div></div>'}
         <div class="addform"><button class="btn btn-ghost btn-sm" data-act="add-con">Legg til konsulent</button></div>
       </div></div>
@@ -659,8 +672,8 @@ function qualifyChooseModal(members){
     <div class="modal-hd"><h3>Velg leverandør</h3></div>
     <div class="modal-bd"><p class="muted-note">Samme oppdrag fra ${members.length} brokere. Velg hvem du kvalifiserer – de andre avvises automatisk.</p>
       <div class="samelist">${members.map(m=>`<button class="sameitem" data-act="pick-broker" data-rid="${m.id}">
-        <span class="nm">${esc(m.org_name||m.from_email||"Ukjent broker")}</span>
-        <span class="s">${esc(m.title||m.subject||"")} · match ${topArea(m).pct}%</span></button>`).join("")}</div></div>
+        <span class="nm">${esc(brokerName(m))}</span>
+        <span class="s">${esc(m.from_email||"")} · match ${topArea(m).pct}%</span></button>`).join("")}</div></div>
     <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button></div></div></div>`;
 }
 async function doQualifyGroup(chosenId){
@@ -780,6 +793,7 @@ $("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if
 $("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b){ selectedId=b.dataset.id; render(); if(window.matchMedia("(max-width:860px)").matches) $("detailWrap").scrollIntoView({behavior:"smooth"}); }});
 $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="selectreq"){ selectedId=b.dataset.rid; render(); return; }
   if(b.dataset.act==="openatt"){ openAttachment(b.dataset.path, b.dataset.name); return; }
+  if(b.dataset.act==="copy-fid"){ try{ navigator.clipboard.writeText(b.dataset.fid); toast("Flowcase-ID kopiert"); }catch(_){ toast("Kunne ikke kopiere"); } return; }
   if(b.dataset.act==="qualify") doQualify(r);
   if(b.dataset.act==="reject") rejectModal([r]);
   if(b.dataset.act==="qualify-group") qualifyChooseModal(nyMembers(r));
