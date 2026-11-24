@@ -586,7 +586,8 @@ function renderDetail(){
   }
   else if(r.status==="kvalifisert") actionHtml=`<div class="resolved"><span class="chip kvalifisert">Kvalifisert</span>
       <span class="lockmsg">🔒 Låst for redigering – opprettet i Pipedrive${r.pipedrive_deal_id?` (deal ${esc(r.pipedrive_deal_id)})`:""}.</span>
-      ${r.pipedrive_deal_id?`<a class="btn btn-ghost btn-sm" href="${dealUrl(r.pipedrive_deal_id)}" target="_blank" rel="noopener">Åpne deal i Pipedrive →</a>`:""}</div>`;
+      ${r.pipedrive_deal_id?`<a class="btn btn-ghost btn-sm" href="${dealUrl(r.pipedrive_deal_id)}" target="_blank" rel="noopener">Åpne deal i Pipedrive →</a>`:""}
+      <button class="btn btn-ghost btn-sm" data-act="unqualify">Avkvalifiser</button></div>`;
   else if(r.status==="avvist") actionHtml=`<div class="resolved"><span class="chip avvist">Avvist</span><span>${esc(r.rejection_reason||"Avvist etter gjennomgang.")}</span><button class="btn btn-ghost btn-sm" data-act="reopen">Gjenåpne</button></div>`;
   else actionHtml=`<div class="resolved"><span class="chip feil">Feil</span><span>Noe gikk galt under scoring.</span></div>`;
 
@@ -777,6 +778,12 @@ async function doReopen(r){
   try{ await callFn("reopen-request",{request_id:r.id}); toast("Forespørsel gjenåpnet"); await loadData(); }
   catch(e){ toast("Gjenåpning feilet: "+e.message); if(btn){ btn.disabled=false; btn.textContent="Gjenåpne"; } }
 }
+async function doUnqualify(r){
+  if(!window.confirm("Avkvalifisere forespørselen? Dealen slettes i Pipedrive, og forespørselen går tilbake til Ny.")) return;
+  const btn=document.querySelector('[data-act="unqualify"]'); if(btn){ btn.disabled=true; btn.textContent="Avkvalifiserer …"; }
+  try{ await callFn("unqualify-request",{request_id:r.id}); toast("Avkvalifisert – deal slettet i Pipedrive"); await loadData(); }
+  catch(e){ toast("Avkvalifisering feilet: "+e.message); if(btn){ btn.disabled=false; btn.textContent="Avkvalifiser"; } }
+}
 async function openAttachment(path, name){
   try{
     const { data, error } = await sb.storage.from("attachments").createSignedUrl(path, 3600, { download: name||true });
@@ -875,7 +882,8 @@ $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-ac
   if(b.dataset.act==="reject") rejectModal([r]);
   if(b.dataset.act==="qualify-group") qualifyChooseModal(nyMembers(r));
   if(b.dataset.act==="reject-group") rejectModal(nyMembers(r));
-  if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r); });
+  if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r);
+  if(b.dataset.act==="unqualify") doUnqualify(r); });
 $("modalMount").addEventListener("click",e=>{
   if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
   const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }

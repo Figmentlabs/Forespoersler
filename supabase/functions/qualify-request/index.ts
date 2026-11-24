@@ -165,6 +165,20 @@ Deno.serve(async (req) => {
     if (startKey && r.start_iso) dealBody[startKey] = r.start_iso;
     if (endKey && r.end_iso) dealBody[endKey] = r.end_iso;
 
+    // Native deal-label = "Figment" på alle våre deals (opprett opsjonen ved behov).
+    try {
+      const fs = await dealFields();
+      const lf = fs.find((x: any) => x.key === "label");
+      let fig = (lf?.options || []).find((o: any) => String(o.label).trim().toLowerCase() === "figment");
+      if (lf && !fig) {
+        const opts = [...(lf.options || []).map((o: any) => ({ id: o.id, label: o.label })), { label: "Figment" }];
+        const upd = await pd(`dealFields/${lf.id}`, { method: "PUT", body: JSON.stringify({ options: opts }) });
+        _dealFields = null;
+        fig = (upd?.options || []).find((o: any) => String(o.label).trim().toLowerCase() === "figment");
+      }
+      if (fig) dealBody.label_ids = [fig.id];
+    } catch { /* ignorer */ }
+
     const deal = await pd(`deals`, { method: "POST", body: JSON.stringify(dealBody) });
 
     // Antatt produkt som produktlinje
