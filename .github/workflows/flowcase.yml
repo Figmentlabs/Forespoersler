@@ -1,0 +1,31 @@
+name: Synk CV-er fra Flowcase
+
+on:
+  schedule:
+    # Daglig kl. 05:00 UTC (CV-er endres sjelden). Juster ved behov.
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: flowcase-sync
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Installer avhengigheter
+        run: pip install -r poller/requirements.txt
+      - name: Kjør Flowcase-synk
+        working-directory: poller
+        env:
+          FLOWCASE_SUBDOMAIN: ${{ secrets.FLOWCASE_SUBDOMAIN }}
+          FLOWCASE_API_KEY: ${{ secrets.FLOWCASE_API_KEY }}
+          FLOWCASE_OFFICE_IDS: ${{ secrets.FLOWCASE_OFFICE_IDS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python flowcase_sync.py
