@@ -68,6 +68,16 @@ Sett category_confidence (0–100) for hvor sikker du er, og en kort norsk \
 category_reasoning. Finnes det eksempler fra teamet nedenfor, vekt dem tungt – de \
 viser hvordan liknende e-poster faktisk skal kategoriseres.
 
+Fastsett LOKASJON for oppdraget som en liste (locations): norske bynavn der \
+oppdraget skal utføres (f.eks. «Oslo», «Bergen», «Trondheim»), og i tillegg \
+«Remote» og/eller «Hybrid» der det er aktuelt. Tom liste hvis stedet ikke framgår.
+
+Er det listet opp andre åpne forespørsler under «Andre åpne forespørsler», vurder \
+om DENNE e-posten gjelder NØYAKTIG samme underliggende oppdrag (samme rolle hos \
+samme sluttkunde) som en av dem – brokere sender ofte ut samme oppdrag. I så fall, \
+sett same_opportunity_id til id-en til den matchende forespørselen. Er det ikke \
+samme oppdrag, sett tom streng.
+
 For hver konsulent: gi (a) en match 0–100 for hvor godt konsulenten passer oppdraget \
 basert på rolle, ferdigheter og erfaring i masterCV-en, og (b) en domenematch – hvor \
 godt konsulentens domenekunnskap (fra CV/erfaring) passer oppdragets domene – på en \
@@ -101,6 +111,8 @@ class ScoringResult:
     category: str = "mulig"
     category_confidence: int = 0
     category_reasoning: str = ""
+    locations: list[str] = field(default_factory=list)
+    same_opportunity_id: str = ""
     consultants: list[ConsultantScore] = field(default_factory=list)
     summary: str = ""
 
@@ -138,7 +150,19 @@ def _examples_block(examples: list[dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
-def _schema(area_keys: list[str], cons_ids: list[str]) -> dict[str, Any]:
+def _candidates_block(candidates: list[dict[str, Any]]) -> str:
+    out = []
+    for c in candidates:
+        out.append(
+            f"- id: {c['id']}\n  tittel: {c.get('title') or c.get('subject') or ''}\n"
+            f"  foretak: {c.get('org_name') or ''}\n  broker: {c.get('from_email') or ''}\n"
+            f"  frist: {c.get('deadline') or ''}"
+        )
+    return "\n".join(out)
+
+
+def _schema(area_keys: list[str], cons_ids: list[str],
+            candidate_ids: list[str] | None = None) -> dict[str, Any]:
     props: dict[str, Any] = {
         "scores": {
             "type": "array",
@@ -160,10 +184,13 @@ def _schema(area_keys: list[str], cons_ids: list[str]) -> dict[str, Any]:
         "category": {"type": "string", "enum": ["klar", "mulig"]},
         "category_confidence": {"type": "integer"},
         "category_reasoning": {"type": "string"},
+        "locations": {"type": "array", "items": {"type": "string"}},
+        "same_opportunity_id": {"type": "string", "enum": [""] + (candidate_ids or [])},
         "summary": {"type": "string"},
     }
     required = ["scores", "best_area_key", "total_score", "title", "domain",
-                "category", "category_confidence", "category_reasoning", "summary"]
+                "category", "category_confidence", "category_reasoning",
+                "locations", "same_opportunity_id", "summary"]
     if cons_ids:
         props["consultants"] = {
             "type": "array",
@@ -204,11 +231,14 @@ class Scorer:
         subject: str,
         body_text: str,
         examples: list[dict[str, Any]] | None = None,
+        candidates: list[dict[str, Any]] | None = None,
     ) -> ScoringResult:
         body = (body_text or "")[:MAX_BODY_CHARS]
         consultants = shortlist_consultants(consultants, subject, body)
+        candidates = candidates or []
         area_keys = [a["key"] for a in areas]
         cons_ids = [c["id"] for c in consultants]
+        candidate_ids = [c["id"] for c in candidates]
 
         parts = [
             "Figments tjenesteområder:",
@@ -222,6 +252,12 @@ class Scorer:
                 "Eksempler på hvordan teamet har kategorisert liknende e-poster "
                 "(bruk disse som fasit for klar/mulig):",
                 _examples_block(examples),
+                "",
+            ]
+        if candidates:
+            parts += [
+                "Andre åpne forespørsler (kan være samme oppdrag fra en annen broker):",
+                _candidates_block(candidates),
                 "",
             ]
         parts += [
@@ -239,7 +275,8 @@ class Scorer:
             model=self.model,
             max_tokens=4000,
             system=SYSTEM_PROMPT,
-            output_config={"effort": "low", "format": _schema(area_keys, cons_ids)},
+            output_config={"effort": "low",
+                           "format": _schema(area_keys, cons_ids, candidate_ids)},
             messages=[{"role": "user", "content": user_content}],
         )
         text = next((b.text for b in response.content if b.type == "text"), None)
@@ -267,6 +304,8 @@ class Scorer:
             category=data.get("category", "mulig"),
             category_confidence=int(data.get("category_confidence", 0) or 0),
             category_reasoning=data.get("category_reasoning", ""),
+            locations=[str(x) for x in (data.get("locations") or []) if str(x).strip()],
+            same_opportunity_id=data.get("same_opportunity_id", "") or "",
             consultants=cons,
             summary=data.get("summary", ""),
         )

@@ -135,7 +135,7 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
 .section{padding:24px;border-bottom:1px solid var(--line)}
 .section:last-child{border-bottom:0}
 .section h4{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#86C9B3;margin-bottom:16px}
-.email{background:var(--surface);border-radius:8px;padding:18px;font-size:14.5px;color:var(--text);line-height:1.6;white-space:pre-wrap}
+.email{background:var(--surface);border-radius:12px;padding:18px 20px;font-size:15px;color:var(--text);line-height:1.7;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto}
 .muted-note{color:var(--muted);font-size:13.5px}
 
 .org{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
@@ -234,6 +234,21 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
 .field input{width:100%;min-height:40px;padding:0 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:var(--surface)}
 .hint{font-size:12.5px;color:var(--muted)}
 .parsebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border-radius:8px;padding:12px;font-size:13px}
+
+/* Nærhetsmarkør, samme oppdrag, lenker, vedlegg */
+.nearpill{font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#7fd9b8;background:rgba(75,194,162,.16);padding:2px 8px;border-radius:999px;white-space:nowrap;margin-left:4px}
+.samelist{display:flex;flex-direction:column;gap:8px}
+.sameitem{display:flex;flex-direction:column;gap:3px;text-align:left;width:100%;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:12px 14px}
+.sameitem:hover{border-color:var(--line-strong)}
+.sameitem .nm{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.sameitem .s{font-size:14.5px;font-weight:600;color:var(--fg);line-height:1.3}
+.linklist{display:flex;flex-direction:column;gap:9px}
+.emaillink{font-size:14px;color:#8fd0f0;text-decoration:none;word-break:break-all;line-height:1.4}
+.emaillink:hover{text-decoration:underline}
+.attlist{display:flex;flex-wrap:wrap;gap:10px}
+.attitem{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 14px;font-size:14px;font-weight:500;color:var(--fg)}
+.attitem:hover{border-color:var(--line-strong)}
+.attitem .sz{font-size:12px;color:var(--muted);font-weight:400}
 </style>
 </head>
 <body>
@@ -329,7 +344,7 @@ const dealUrl = id => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${encodeUR
 let REQUESTS = [], ACCOUNTS = [], DOMAINS = [], CONSULTS = [];
 let pendingCvPath = null;
 let view="requests", filter="ny", selCat="klar", selLoc=new Set(), selectedId=null, me=null;
-const CATLABEL = {klar:"Klare forespørsler", mulig:"Mulige forespørsler"};
+const CATLABEL = {klar:"Verifiserte forespørsler", mulig:"Mulige forespørsler"};
 
 const $ = id => document.getElementById(id);
 function esc(s){ return String(s ?? "").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -342,6 +357,25 @@ function consOf(r){ return (r.consultant_matches||[]).slice().sort((a,b)=>b.matc
 function topArea(r){ const s=scoresOf(r)[0]; return s?{pct:s.score, name:s.service_areas?.name||"—"}:{pct:r.total_score??0, name:"—"}; }
 function relMeter(level, big){ const m=REL[level]; if(!m) return ""; let seg=""; for(let i=1;i<=4;i++) seg+=`<i class="${i<=m.n?'on':''}"></i>`; return `<span class="${big?'meter big':'meter'}" style="--rc:${m.col}">${seg}</span>`; }
 function locsOf(r){ return Array.isArray(r.locations)?r.locations:[]; }
+function cityList(r){ return locsOf(r).filter(l=>l!=="Remote"&&l!=="Hybrid"); }
+function consSorted(r){
+  const cities=new Set(cityList(r).map(c=>c.toLowerCase()));
+  const near=cm=>cities.size && cities.has(((cm.consultants||{}).location||"").toLowerCase());
+  return consOf(r).slice().sort((a,b)=>{
+    const d=(near(a)?0:1)-(near(b)?0:1); if(d) return d;
+    return (b.match_percent||0)-(a.match_percent||0);
+  });
+}
+function sameOppOf(r){ return r.opportunity_group_id ? REQUESTS.filter(x=>x.id!==r.id && x.opportunity_group_id===r.opportunity_group_id) : []; }
+function extractLinks(text){
+  const re=/https?:\/\/[^\s<>"')\]]+/gi, seen=new Set(), out=[];
+  for(const m of String(text||"").matchAll(re)){
+    const u=m[0].replace(/[.,;:]+$/,"");
+    if(!seen.has(u)){ seen.add(u); out.push(u); }
+    if(out.length>=12) break;
+  }
+  return out;
+}
 function locInteresting(locs){ if(!locs.length) return true; const cities=locs.filter(l=>l!=="Remote"&&l!=="Hybrid"); if(locs.includes("Remote")&&!cities.length) return true; if(cities.some(c=>OFFICE.includes(c))) return true; if(!cities.length) return true; return false; }
 
 function recommend(r){
@@ -372,7 +406,8 @@ function recommend(r){
 
 // ---------- Datahenting ----------
 async function loadData(){
-  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,`
+  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,`
+    + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(name,title,location,years_experience,skills,certifications,summary))`;
   const [{data:reqs, error:e1}, {data:accs}, {data:doms}, {data:cons}] = await Promise.all([
@@ -440,11 +475,13 @@ function renderDetail(){
       <div class="svc-why">${esc(s.reasoning||"")}</div></div>`; }).join("")
     : '<div class="muted-note">Ingen tjenestescore ennå.</div>';
 
-  const cs=consOf(r);
+  const oppCities=new Set(cityList(r).map(c=>c.toLowerCase()));
+  const cs=consSorted(r);
   const consHtml = cs.length ? cs.map(cm=>{ const c=cm.consultants||{}, p=cm.match_percent;
+    const near=oppCities.size && oppCities.has((c.location||"").toLowerCase());
     return `<div class="cons-card"><div class="cons-top">
         <div class="ring" style="background:conic-gradient(${ringColor(p)} ${p}%, var(--surface) 0)"><b>${p}%</b></div>
-        <div class="cons-id"><div class="nm">${esc(c.name)}</div><div class="ttl">${esc([c.title,c.location,c.years_experience?c.years_experience+" år":null].filter(Boolean).join(" · "))}</div></div></div>
+        <div class="cons-id"><div class="nm">${esc(c.name)}${near?' <span class="nearpill">📍 Nær lokasjon</span>':''}</div><div class="ttl">${esc([c.title,c.location,c.years_experience?c.years_experience+" år":null].filter(Boolean).join(" · "))}</div></div></div>
       <div class="cons-why">${esc(cm.reasoning||"")}</div>
       ${cm.domain_level?`<div class="cons-domain">${relMeter(cm.domain_level)}<span>Domene: <b>${esc(REL[cm.domain_level].label)}</b>${cm.domain_reasoning?" — "+esc(cm.domain_reasoning):""}</span></div>`:""}
       ${c.summary?`<details class="cons-more"><summary>masterCV</summary><div class="cv">${esc(c.summary)}
@@ -476,18 +513,38 @@ function renderDetail(){
   const facHtml=rec.factors.map(f=>`<span class="fac ${f.tone}">${esc(f.label)} <b>${esc(f.val)}</b></span>`).join("");
   const cat=catOf(r), catTo=cat==="klar"?"mulig":"klar";
   const catHtml=`<div class="catrow">
-      <span class="catbadge cat-${cat}">${cat==="klar"?"Klar":"Mulig"} forespørsel</span>
+      <span class="catbadge cat-${cat}">${cat==="klar"?"Verifisert":"Mulig"} forespørsel</span>
       ${r.category_reasoning?`<span class="catwhy">${esc(r.category_reasoning)}</span>`:""}
-      ${r.status==="ny"?`<button class="btn btn-ghost btn-sm catmove" data-act="movecat">Flytt til ${catTo==="mulig"?"Mulige":"Klare"}</button>`:""}</div>`;
+      ${r.status==="ny"?`<button class="btn btn-ghost btn-sm catmove" data-act="movecat">Flytt til ${catTo==="mulig"?"Mulige":"Verifiserte"}</button>`:""}</div>`;
+
+  const sameOpp=sameOppOf(r);
+  const sameOppHtml = sameOpp.length ? `<div class="section"><h4>Samme, mulige oppdrag</h4>
+      <div class="muted-note" style="margin-bottom:12px">Ser ut til å være samme oppdrag fra flere brokere:</div>
+      <div class="samelist">${sameOpp.map(o=>`<button class="sameitem" data-act="selectreq" data-rid="${o.id}">
+        <span class="nm">${esc(o.org_name||o.from_email||"Ukjent broker")}</span>
+        <span class="s">${esc(o.title||o.subject||"")}</span></button>`).join("")}</div></div>` : "";
+
+  const links=extractLinks(r.body_text);
+  const linksHtml = links.length ? `<div class="section"><h4>Lenker i e-posten</h4>
+      <div class="linklist">${links.map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener" class="emaillink">${esc(u.length>72?u.slice(0,72)+"…":u)}</a>`).join("")}</div></div>` : "";
+
+  const atts=Array.isArray(r.attachments)?r.attachments:[];
+  const attHtml = atts.length ? `<div class="section"><h4>Vedlegg</h4>
+      <div class="attlist">${atts.map(a=>`<button class="attitem" data-act="openatt" data-path="${esc(a.storage_path)}" data-name="${esc(a.filename)}">
+        <span class="ic">📎</span><span class="nm">${esc(a.filename)}</span>${a.size_bytes?`<span class="sz">${Math.round(a.size_bytes/1024)} KB</span>`:""}</button>`).join("")}</div></div>` : "";
+
   wrap.innerHTML=`<div class="detail">
     <div class="detail-hd"><div class="hdrow"><div><div class="eyebrow">${esc(r.org_name||r.from_email||"")}</div><h2>${esc(r.title||r.subject||"(uten emne)")}</h2></div>
       <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
       <div class="kv"><span>Fra <b>${esc(r.from_email||"")}</b></span><span>Til <b>${esc(r.to_email||"")}</b></span>
-        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div>${catHtml}</div>
+        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${locsOf(r).length?`<span>Lokasjon <b>${esc(locsOf(r).join(" / "))}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div>${catHtml}</div>
     <div class="section actionbar">${actionHtml}</div>
     <div class="recbanner" style="--rcol:${rm.col}"><div class="recmain"><div class="recverdict">Anbefalt: ${rm.label}</div><div class="recwhy">${esc(rec.why)}</div></div><div class="recfactors">${facHtml}</div></div>
     ${orgSection}
+    ${sameOppHtml}
     <div class="section"><h4>Epost</h4><div class="email">${esc(r.body_text||"(ingen tekst)")}</div></div>
+    ${linksHtml}
+    ${attHtml}
     <div class="section"><h4>Tjenestematch</h4>${svcHtml}</div>
     <div class="section"><h4>Konsulentmatch</h4><div class="cons">${consHtml}</div></div>
   </div>`;
@@ -554,7 +611,7 @@ async function doMoveCat(r){
   const btn=document.querySelector('[data-act="movecat"]'); if(btn){ btn.disabled=true; btn.textContent="Flytter …"; }
   try{
     await callFn("set-category",{request_id:r.id, category:to});
-    toast(to==="klar"?"Flyttet til Klare forespørsler":"Flyttet til Mulige forespørsler");
+    toast(to==="klar"?"Flyttet til Verifiserte forespørsler":"Flyttet til Mulige forespørsler");
     selectedId=null; await loadData();  // lær-signalet er lagret; gå videre i gjeldende liste
   }catch(e){ toast("Flytting feilet: "+e.message); if(btn) btn.disabled=false; }
 }
@@ -562,6 +619,13 @@ async function doReopen(r){
   const btn=document.querySelector('[data-act="reopen"]'); if(btn){ btn.disabled=true; btn.textContent="Gjenåpner …"; }
   try{ await callFn("reopen-request",{request_id:r.id}); toast("Forespørsel gjenåpnet"); await loadData(); }
   catch(e){ toast("Gjenåpning feilet: "+e.message); if(btn){ btn.disabled=false; btn.textContent="Gjenåpne"; } }
+}
+async function openAttachment(path, name){
+  try{
+    const { data, error } = await sb.storage.from("attachments").createSignedUrl(path, 3600, { download: name||true });
+    if(error) throw error;
+    window.open(data.signedUrl, "_blank");
+  }catch(e){ toast("Kunne ikke åpne vedlegg: "+(e.message||e)); }
 }
 
 // ---------- Konsulent-admin ----------
@@ -647,7 +711,9 @@ $("locchips").addEventListener("click",e=>{ const b=e.target.closest("[data-loc]
 $("locclear").addEventListener("click",()=>{ selLoc.clear(); render(); });
 $("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if(b){ filter=b.dataset.f; render(); }});
 $("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b){ selectedId=b.dataset.id; render(); if(window.matchMedia("(max-width:860px)").matches) $("detailWrap").scrollIntoView({behavior:"smooth"}); }});
-$("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="qualify") doQualify(r); if(b.dataset.act==="reject") rejectModal(r); if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r); });
+$("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="selectreq"){ selectedId=b.dataset.rid; render(); return; }
+  if(b.dataset.act==="openatt"){ openAttachment(b.dataset.path, b.dataset.name); return; }
+  if(b.dataset.act==="qualify") doQualify(r); if(b.dataset.act==="reject") rejectModal(r); if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r); });
 $("modalMount").addEventListener("click",e=>{
   if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
   const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }

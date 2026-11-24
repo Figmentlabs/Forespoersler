@@ -4,7 +4,8 @@ Bruker service_role-nøkkelen og omgår RLS. Kjøres kun server-side.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from supabase import Client, create_client
@@ -31,6 +32,20 @@ class Store:
             self.client.table("consultants")
             .select("id, name, title, skills, summary")
             .eq("available", True)
+            .execute()
+        )
+        return res.data or []
+
+    def open_candidates(self, exclude_id: str, days: int = 30, limit: int = 40) -> list[dict[str, Any]]:
+        """Nylige forespørsler (ekskl. den aktuelle) – kandidater for «samme oppdrag»."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        res = (
+            self.client.table("requests")
+            .select("id, subject, title, org_name, from_email, deadline, opportunity_group_id")
+            .neq("id", exclude_id)
+            .gte("received_at", cutoff)
+            .order("received_at", desc=True)
+            .limit(limit)
             .execute()
         )
         return res.data or []
@@ -136,6 +151,34 @@ class Store:
                 "title": title,
                 "scored_at": datetime.now(timezone.utc).isoformat(),
             }
+        ).eq("id", request_id).execute()
+
+    def update_request_location(self, request_id: str, locations: list[str] | None) -> None:
+        self.client.table("requests").update(
+            {"locations": locations or []}
+        ).eq("id", request_id).execute()
+
+    def link_same_opportunity(self, request_id: str, matched_id: str) -> None:
+        """Knytt request_id til samme oppdragsgruppe som matched_id."""
+        if not matched_id or matched_id == request_id:
+            return
+        m = (
+            self.client.table("requests")
+            .select("opportunity_group_id")
+            .eq("id", matched_id)
+            .limit(1)
+            .execute()
+        )
+        if not m.data:
+            return
+        gid = m.data[0].get("opportunity_group_id")
+        if not gid:
+            gid = str(uuid.uuid4())
+            self.client.table("requests").update(
+                {"opportunity_group_id": gid}
+            ).eq("id", matched_id).execute()
+        self.client.table("requests").update(
+            {"opportunity_group_id": gid}
         ).eq("id", request_id).execute()
 
     def update_request_category(

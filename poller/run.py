@@ -139,6 +139,7 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
         request_id, result.category or "mulig",
         max(0, min(100, result.category_confidence)), result.category_reasoning or None,
     )
+    store.update_request_location(request_id, result.locations)
 
 
 def process_account(
@@ -182,10 +183,15 @@ def process_account(
 
         _store_attachments(store, request_id, mail)
         try:
-            result = scorer.score(areas, consultants, mail.subject or "", mail.body_text or "", examples)
+            candidates = store.open_candidates(request_id)
+            result = scorer.score(areas, consultants, mail.subject or "", mail.body_text or "",
+                                  examples, candidates)
             _store_scores(store, request_id, areas, consultants, result)
-            log.info("[%s] scoret '%s' → %s (%d)", acc.email, (mail.subject or "")[:50],
-                     result.best_area_key, result.total_score)
+            if result.same_opportunity_id:
+                store.link_same_opportunity(request_id, result.same_opportunity_id)
+            log.info("[%s] scoret '%s' → %s (%d)%s", acc.email, (mail.subject or "")[:50],
+                     result.best_area_key, result.total_score,
+                     " [samme oppdrag]" if result.same_opportunity_id else "")
         except Exception as exc:
             log.error("[%s] scoring feilet for %s: %s", acc.email, request_id, exc)
             store.mark_request_error(request_id)
