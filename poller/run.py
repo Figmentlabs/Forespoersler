@@ -143,6 +143,7 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
     store.update_request_engagement(
         request_id, result.start_date, result.duration, result.assumed_product,
     )
+    store.set_customer(request_id, result.customer)
 
 
 def process_account(

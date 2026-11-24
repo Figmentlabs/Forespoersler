@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Brokerforespørsler</title>
+<title>Kvalifiseringstavla</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
@@ -148,6 +148,13 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
 .org .nm{font-weight:600;font-size:16px}
 .org .org-meta{font-size:13px;color:var(--muted);margin-top:3px}
 .relbox{margin-top:14px;background:var(--surface);border-radius:8px;padding:16px}
+.custact{margin-top:14px;background:var(--surface);border-radius:12px;padding:14px 16px}
+.custact-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.custact-score{font-family:var(--font-display);font-weight:700;font-size:26px;font-variant-numeric:tabular-nums;line-height:1}
+.custact-max{font-size:13px;color:var(--muted)}
+.custact-lbl{font-size:13.5px;color:var(--soft);font-weight:600;margin-left:auto}
+.custact .bar{margin-top:10px}
+.custact-why{font-size:12.5px;color:var(--muted);margin-top:8px}
 .relhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .relbadge{font-family:var(--font-display);font-weight:600;font-size:17px}
 .signals{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
@@ -267,7 +274,7 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
 <div class="gate" id="gate">
   <div class="gatecard">
     <div class="wordmark">Figment</div>
-    <h1>Brokerforespørsler</h1>
+    <h1>Kvalifiseringstavla</h1>
     <p id="gatemsg">Kobler til …</p>
     <div class="spinner" id="gatespin"></div>
     <button class="gatebtn" id="loginbtn" hidden>Logg inn med Figment</button>
@@ -280,7 +287,7 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
       <span class="brand">
         <span class="wordmark">Figment</span>
         <span class="divider"></span>
-        <span class="app">Brokerforespørsler</span>
+        <span class="app">Kvalifiseringstavla</span>
       </span>
       <nav class="viewnav" id="viewnav">
         <button data-view="requests" aria-current="true">Forespørsler</button>
@@ -385,6 +392,14 @@ function brokerName(r){
   if(d){ const core=d.replace(/\.(com|no|org|io|net|se|dk|eu)$/i,"").split(".").pop(); return core?core.charAt(0).toUpperCase()+core.slice(1):d; }
   return r.from_email||"Ukjent leverandør";
 }
+function custActLabel(s){ return s>=100?"Flere pågående oppdrag":s>=80?"Pågående oppdrag":s>=50?"Tidligere oppdrag":"Ingen kjent aktivitet"; }
+function custActTier(s){ return s>=80?"strong":s>=50?"med":"low"; }
+const enrichAttempted=new Set();
+function maybeEnrichCustomer(r){
+  if(!r||!r.org_name||r.customer_activity!=null||enrichAttempted.has(r.id)) return;
+  enrichAttempted.add(r.id);
+  callFn("enrich-customer",{request_id:r.id}).then(()=>loadData()).catch(()=>{});
+}
 function groupMembers(r){ return r.opportunity_group_id ? REQUESTS.filter(x=>x.opportunity_group_id===r.opportunity_group_id) : [r]; }
 function nyMembers(r){ return groupMembers(r).filter(m=>m.status==="ny"); }
 function groupVisible(){
@@ -426,6 +441,7 @@ function recommend(r){
   const dlvl = bc && bc.domain_level ? REL[bc.domain_level].n : null;
   if(dlvl!=null) factors.push({label:"Domene",val:REL[bc.domain_level].label,tone:dlvl>=3?"good":dlvl===2?"mid":"bad"});
   if(locs.length) factors.push({label:"Lokasjon",val:locs.join(" / "),tone:locGood?"good":"bad"});
+  if(r.customer_activity!=null) factors.push({label:"Kunde",val:r.customer_activity+"/100",tone:r.customer_activity>=80?"good":r.customer_activity>=50?"mid":"bad"});
   if(svc<35) return {verdict:"avvis", why:`Tjenestematch bare ${svc}% – utenfor Figments tjenesteområder.`, factors};
   let pts=0;
   pts += svc>=70?2:svc>=50?1:0;
@@ -433,6 +449,7 @@ function recommend(r){
   if(rn!=null && rn>=3) pts+=1;
   if(dlvl!=null && dlvl>=3) pts+=1;
   if(locGood) pts+=1;
+  if(r.customer_activity!=null && r.customer_activity>=80) pts+=1;
   const neg=[];
   if(rn!=null&&rn<3) neg.push("svak relasjon");
   if(locs.length&&!locGood) neg.push(`${locs.join("/")} er mindre prioritert`);
@@ -446,7 +463,7 @@ function recommend(r){
 
 // ---------- Datahenting ----------
 async function loadData(){
-  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,start_date,duration,assumed_product,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
+  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,start_date,duration,assumed_product,customer_activity,customer_activity_signals,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
     + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(id,name,title,company,location,years_experience,skills,keywords,certifications,summary,flowcase_user_id))`;
@@ -511,6 +528,7 @@ function renderList(){
 function renderDetail(){
   const wrap=$("detailWrap"); const r=REQUESTS.find(x=>x.id===selectedId);
   if(!r){ wrap.innerHTML='<div class="detail"><div class="empty">Velg en forespørsel i listen.</div></div>'; return; }
+  maybeEnrichCustomer(r);
   const rec=recommend(r), rm=REC[rec.verdict];
   const ss=scoresOf(r), bestKey=ss[0]?.service_areas?.key;
   const svcHtml = ss.length ? ss.map(s=>{ const p=s.score,t=tier(p),nm=s.service_areas?.name||"—",isBest=s.service_areas?.key===bestKey;
@@ -539,8 +557,15 @@ function renderDetail(){
   const sigChips = Object.keys(s).length ? [
     ["deals","dealer"],["won","vunnet"],["activities","aktiviteter"],["emails","e-poster"],["contacts","kontakter"]
   ].filter(([k])=>s[k]!=null).map(([k,l])=>`<span class="sig"><b>${esc(s[k])}</b> ${l}</span>`).join("") + (s.last_contact?`<span class="sig">Sist: <b>${esc(s.last_contact)}</b></span>`:"") : "";
-  const orgSection = (r.org_name||rl) ? `<div class="section"><h4>Foretak og relasjon</h4>
-      <div class="org"><div><div class="nm">${esc(r.org_name||"Ukjent foretak")}</div><div class="org-meta">${esc(r.contact_name||r.from_email||"")}</div></div></div>
+  const ca=r.customer_activity, cas=r.customer_activity_signals||{};
+  const custActHtml = r.org_name ? `<div class="custact">
+      <div class="custact-top"><span class="custact-score txt-${custActTier(ca||0)}">${ca!=null?ca:"…"}</span><span class="custact-max">/100</span><span class="custact-lbl">${ca!=null?esc(custActLabel(ca)):"Kunde-aktivitet hentes …"}</span></div>
+      ${ca!=null?`<div class="bar"><i class="tier-${custActTier(ca)}" style="width:${ca}%"></i></div>`:""}
+      ${cas.ongoing!=null?`<div class="custact-why">${cas.ongoing} pågående · ${cas.previous} tidligere oppdrag i Pipedrive</div>`:(cas.reason?`<div class="custact-why">${esc(cas.reason)}</div>`:"")}
+    </div>` : "";
+  const orgSection = (r.org_name||rl) ? `<div class="section"><h4>Kunde og relasjon</h4>
+      <div class="org"><div><div class="nm">${esc(r.org_name||"Ukjent kunde")}</div><div class="org-meta">${esc(r.contact_name||r.from_email||"")}</div></div></div>
+      ${custActHtml}
       ${rl?`<div class="relbox"><div class="relhead"><span class="relbadge">Relasjon: ${esc(rl.label)}</span>${relMeter(r.relationship_level,true)}</div>
         ${sigChips?`<div class="signals">${sigChips}</div>`:""}</div>`:'<div class="relbox"><span class="muted-note">Ikke beriket fra Pipedrive ennå.</span></div>'}
     </div>` : "";

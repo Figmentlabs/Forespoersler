@@ -77,6 +77,9 @@ Trekk ut OPPSTART (start_date): når oppdraget starter, slik det framgår av \
 e-posten (f.eks. «2026-01-15», «januar 2026», «snarest»). Tom streng hvis ukjent.
 Trekk ut VARIGHET (duration): oppdragets varighet eller omfang (f.eks. «6 måneder», \
 «12 mnd + opsjon», «ca. 500 timer»). Tom streng hvis ukjent.
+Fastsett KUNDE (customer): navnet på sluttkunden/oppdragsgiveren oppdraget gjelder, \
+hvis det framgår av e-posten (f.eks. «Helse Sør-Øst», «Skatteetaten», «DNB»). Tom \
+streng hvis bare brokeren er nevnt eller kunden ikke framgår.
 Fastsett ANTATT PRODUKT (assumed_product): kort norsk etikett for tjenesten eller \
 leveransen Figment mest sannsynlig vil tilby på dette oppdraget (f.eks. \
 «Prosjektledelse», «Rådgivning», «Tjenestedesign»), typisk basert på beste \
@@ -122,6 +125,7 @@ class ScoringResult:
     category_confidence: int = 0
     category_reasoning: str = ""
     locations: list[str] = field(default_factory=list)
+    customer: str = ""
     start_date: str = ""
     duration: str = ""
     assumed_product: str = ""
@@ -200,6 +204,7 @@ def _schema(area_keys: list[str], cons_ids: list[str],
         "category_confidence": {"type": "integer"},
         "category_reasoning": {"type": "string"},
         "locations": {"type": "array", "items": {"type": "string"}},
+        "customer": {"type": "string"},
         "start_date": {"type": "string"},
         "duration": {"type": "string"},
         "assumed_product": {"type": "string"},
@@ -208,7 +213,7 @@ def _schema(area_keys: list[str], cons_ids: list[str],
     }
     required = ["scores", "best_area_key", "total_score", "title", "domain",
                 "category", "category_confidence", "category_reasoning",
-                "locations", "start_date", "duration", "assumed_product",
+                "locations", "customer", "start_date", "duration", "assumed_product",
                 "same_opportunity_id", "summary"]
     if cons_ids:
         props["consultants"] = {
@@ -324,6 +329,7 @@ class Scorer:
             category_confidence=int(data.get("category_confidence", 0) or 0),
             category_reasoning=data.get("category_reasoning", ""),
             locations=[str(x) for x in (data.get("locations") or []) if str(x).strip()],
+            customer=data.get("customer", "") or "",
             start_date=data.get("start_date", "") or "",
             duration=data.get("duration", "") or "",
             assumed_product=data.get("assumed_product", "") or "",

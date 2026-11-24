@@ -192,6 +192,12 @@ class Store:
             {"opportunity_group_id": gid}
         ).eq("id", request_id).execute()
 
+    def set_customer(self, request_id: str, customer: str | None) -> None:
+        if customer:
+            self.client.table("requests").update(
+                {"org_name": customer}
+            ).eq("id", request_id).execute()
+
     def update_request_engagement(
         self, request_id: str, start_date: str | None, duration: str | None, assumed_product: str | None
     ) -> None:
