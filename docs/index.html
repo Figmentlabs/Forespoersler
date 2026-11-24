@@ -549,7 +549,6 @@ function renderDetail(){
         <div class="cons-id"><div class="nm">${esc(c.name)}${near?' <span class="nearpill">📍 Nær lokasjon</span>':''}</div><div class="ttl">${esc([c.title,c.location,c.years_experience?c.years_experience+" år":null].filter(Boolean).join(" · "))}</div></div></div>
       <div class="cons-why">${esc(cm.reasoning||"")}</div>
       ${cm.domain_level?`<div class="cons-domain">${relMeter(cm.domain_level)}<span>Domene: <b>${esc(REL[cm.domain_level].label)}</b>${cm.domain_reasoning?" — "+esc(cm.domain_reasoning):""}</span></div>`:""}
-      ${c.flowcase_user_id?`<div class="cons-fid">Flowcase-ID <code>${esc(c.flowcase_user_id)}</code><button class="copyfid" data-act="copy-fid" data-fid="${esc(c.flowcase_user_id)}" title="Kopier">⧉</button></div>`:""}
       ${(c.summary||(c.keywords||[]).length||(c.certifications||[]).length)?`<details class="cons-more"><summary>masterCV</summary><div class="cv">${c.summary?esc(c.summary):""}
         ${(c.keywords||[]).length?`<div class="cvlabel">Nøkkelord (hele CV, inkl. prosjekter)</div><div class="tags">${(c.keywords||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</div>`:""}
         ${(c.certifications||[]).length?`<div class="cvlabel">Sertifiseringer</div><div class="tags">${(c.certifications||[]).map(s=>`<span class="tag">${esc(s)}</span>`).join("")}</div>`:""}</div></details>`:""}
