@@ -128,10 +128,15 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
         request_id, best_area_id, max(0, min(100, result.total_score)),
         result.domain or None, result.title or None,
     )
+    store.update_request_category(
+        request_id, result.category or "mulig",
+        max(0, min(100, result.category_confidence)), result.category_reasoning or None,
+    )
 
 
 def process_account(
-    cfg: Config, store: Store, scorer: Scorer, areas, consultants, domains, acc: ImapAccount
+    cfg: Config, store: Store, scorer: Scorer, areas, consultants, domains, acc: ImapAccount,
+    examples=None,
 ) -> int:
     key = f"{acc.email}:{acc.mailbox}"
     last_uid = store.get_last_uid(key)
@@ -169,7 +174,7 @@ def process_account(
 
         _store_attachments(store, request_id, mail)
         try:
-            result = scorer.score(areas, consultants, mail.subject or "", mail.body_text or "")
+            result = scorer.score(areas, consultants, mail.subject or "", mail.body_text or "", examples)
             _store_scores(store, request_id, areas, consultants, result)
             log.info("[%s] scoret '%s' → %s (%d)", acc.email, (mail.subject or "")[:50],
                      result.best_area_key, result.total_score)
@@ -200,13 +205,14 @@ def run() -> int:
         return 2
     consultants = store.consultants()
     domains = store.sender_domains()
-    log.info("%d tjenesteområder, %d konsulenter, %d overvåkede domener, %d konto(er)",
-             len(areas), len(consultants), len(domains), len(cfg.accounts))
+    examples = store.category_examples()
+    log.info("%d tjenesteområder, %d konsulenter, %d overvåkede domener, %d konto(er), %d kategori-eksempler",
+             len(areas), len(consultants), len(domains), len(cfg.accounts), len(examples))
 
     total = 0
     for acc in cfg.accounts:
         try:
-            total += process_account(cfg, store, scorer, areas, consultants, domains, acc)
+            total += process_account(cfg, store, scorer, areas, consultants, domains, acc, examples)
         except Exception as exc:
             log.error("[%s] konto feilet: %s", acc.email, exc)
 

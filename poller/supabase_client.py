@@ -35,6 +35,17 @@ class Store:
         )
         return res.data or []
 
+    def category_examples(self, limit: int = 40) -> list[dict[str, Any]]:
+        """Teamets korrigeringer (klar/mulig) som few-shot til klassifiseringen."""
+        res = (
+            self.client.table("category_feedback")
+            .select("subject, body_excerpt, category")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+
     def sender_domains(self) -> set[str]:
         res = (
             self.client.table("sender_domains")
@@ -126,6 +137,18 @@ class Store:
                 "scored_at": datetime.now(timezone.utc).isoformat(),
             }
         ).eq("id", request_id).execute()
+
+    def update_request_category(
+        self, request_id: str, category: str, confidence: int, reasoning: str | None
+    ) -> None:
+        # Rør aldri en kategori brukeren har overstyrt manuelt.
+        self.client.table("requests").update(
+            {
+                "category": category,
+                "category_confidence": confidence,
+                "category_reasoning": reasoning,
+            }
+        ).eq("id", request_id).eq("category_overridden", False).execute()
 
     def mark_request_error(self, request_id: str) -> None:
         self.client.table("requests").update({"status": "feil"}).eq(

@@ -58,6 +58,16 @@ Fastsett oppdragets DOMENE (kort norsk etikett for bransje/sektor), f.eks. \
 «Offentlig sektor – helse», «Offentlig forvaltning», «Bank og finans», «Energi», \
 «Industri», «Transport».
 
+Avgjør KATEGORI for e-posten:
+- «klar»: e-posten er helt klart en konkret oppdragsforespørsel – en navngitt rolle \
+eller et konkret oppdrag en broker søker å fylle, med nok innhold til å vurderes.
+- «mulig»: e-posten KAN være en forespørsel, men er usikker – automatiske jobbvarsler \
+og digester (f.eks. «new jobs published»), nyhetsbrev, generiske massehenvendelser, \
+vage forespørsler, eller noe som like gjerne kan være støy eller feil.
+Sett category_confidence (0–100) for hvor sikker du er, og en kort norsk \
+category_reasoning. Finnes det eksempler fra teamet nedenfor, vekt dem tungt – de \
+viser hvordan liknende e-poster faktisk skal kategoriseres.
+
 For hver konsulent: gi (a) en match 0–100 for hvor godt konsulenten passer oppdraget \
 basert på rolle, ferdigheter og erfaring i masterCV-en, og (b) en domenematch – hvor \
 godt konsulentens domenekunnskap (fra CV/erfaring) passer oppdragets domene – på en \
@@ -88,6 +98,9 @@ class ScoringResult:
     total_score: int
     title: str = ""
     domain: str = ""
+    category: str = "mulig"
+    category_confidence: int = 0
+    category_reasoning: str = ""
     consultants: list[ConsultantScore] = field(default_factory=list)
     summary: str = ""
 
@@ -114,6 +127,17 @@ def _cons_block(cons: list[dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
+def _examples_block(examples: list[dict[str, Any]]) -> str:
+    out = []
+    for e in examples:
+        excerpt = (e.get("body_excerpt") or "").replace("\n", " ")[:300]
+        out.append(
+            f"- KATEGORI: {e['category']}\n  Emne: {e.get('subject','') or ''}\n"
+            f"  Utdrag: {excerpt}"
+        )
+    return "\n".join(out)
+
+
 def _schema(area_keys: list[str], cons_ids: list[str]) -> dict[str, Any]:
     props: dict[str, Any] = {
         "scores": {
@@ -133,9 +157,13 @@ def _schema(area_keys: list[str], cons_ids: list[str]) -> dict[str, Any]:
         "total_score": {"type": "integer"},
         "title": {"type": "string"},
         "domain": {"type": "string"},
+        "category": {"type": "string", "enum": ["klar", "mulig"]},
+        "category_confidence": {"type": "integer"},
+        "category_reasoning": {"type": "string"},
         "summary": {"type": "string"},
     }
-    required = ["scores", "best_area_key", "total_score", "title", "domain", "summary"]
+    required = ["scores", "best_area_key", "total_score", "title", "domain",
+                "category", "category_confidence", "category_reasoning", "summary"]
     if cons_ids:
         props["consultants"] = {
             "type": "array",
@@ -175,6 +203,7 @@ class Scorer:
         consultants: list[dict[str, Any]],
         subject: str,
         body_text: str,
+        examples: list[dict[str, Any]] | None = None,
     ) -> ScoringResult:
         body = (body_text or "")[:MAX_BODY_CHARS]
         consultants = shortlist_consultants(consultants, subject, body)
@@ -188,6 +217,13 @@ class Scorer:
         ]
         if consultants:
             parts += ["Aktuelle konsulenter:", _cons_block(consultants), ""]
+        if examples:
+            parts += [
+                "Eksempler på hvordan teamet har kategorisert liknende e-poster "
+                "(bruk disse som fasit for klar/mulig):",
+                _examples_block(examples),
+                "",
+            ]
         parts += [
             "Innkommen forespørsel:",
             f"Emne: {subject}",
@@ -228,6 +264,9 @@ class Scorer:
             total_score=int(data["total_score"]),
             title=data.get("title", ""),
             domain=data.get("domain", ""),
+            category=data.get("category", "mulig"),
+            category_confidence=int(data.get("category_confidence", 0) or 0),
+            category_reasoning=data.get("category_reasoning", ""),
             consultants=cons,
             summary=data.get("summary", ""),
         )
