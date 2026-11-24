@@ -32,6 +32,13 @@ from supabase import create_client
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("flowcase")
 
+# Opprinnelige placeholder/mock-konsulenter. Slettes automatisk etter at ekte
+# konsulenter er synket inn fra Flowcase (kun de uten Flowcase-kobling).
+MOCK_NAMES = [
+    "Lise Haugen", "Anders Moen", "Kari Nordbø", "Jonas Eide",
+    "Mette Solberg", "Lise Aasland Ursin",
+]
+
 
 def _req(name: str) -> str:
     v = os.getenv(name)
@@ -195,6 +202,16 @@ def run() -> int:
         except Exception as exc:
             log.warning("Feilet for %s: %s", u.get("name"), exc)
         time.sleep(0.15)  # hold oss godt under 10 req/s
+
+    # Rydd bort placeholder-konsulentene når ekte er synket inn.
+    if synced > 0:
+        try:
+            sb.table("consultants").delete().in_("name", MOCK_NAMES).is_(
+                "flowcase_user_id", "null"
+            ).execute()
+            log.info("Ryddet bort placeholder-konsulenter uten Flowcase-kobling.")
+        except Exception as exc:
+            log.warning("Opprydding av placeholder-konsulenter feilet: %s", exc)
 
     log.info("Ferdig. Synket %d konsulent(er) fra Flowcase.", synced)
     return 0
