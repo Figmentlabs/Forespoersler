@@ -115,12 +115,14 @@ class Store:
         best_area_id: str | None,
         total_score: int,
         domain: str | None = None,
+        title: str | None = None,
     ) -> None:
         self.client.table("requests").update(
             {
                 "best_area_id": best_area_id,
                 "total_score": total_score,
                 "domain": domain,
+                "title": title,
                 "scored_at": datetime.now(timezone.utc).isoformat(),
             }
         ).eq("id", request_id).execute()

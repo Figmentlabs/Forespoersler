@@ -357,7 +357,7 @@ function recommend(r){
 
 // ---------- Datahenting ----------
 async function loadData(){
-  const sel = `id,subject,from_email,from_name,to_email,received_at,deadline,status,total_score,domain,locations,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,`
+  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,total_score,domain,locations,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(name,title,location,years_experience,skills,certifications,summary))`;
   const [{data:reqs, error:e1}, {data:accs}, {data:doms}, {data:cons}] = await Promise.all([
@@ -396,7 +396,7 @@ function renderList(){
     const ta=topArea(r), rec=recommend(r), locs=locsOf(r), rl=r.relationship_level?REL[r.relationship_level]:null;
     return `<button class="card item" data-id="${r.id}" aria-current="${selectedId===r.id}">
       <div class="eyebrow">${esc(r.org_name||r.from_email||"Ukjent avsender")}</div>
-      <h3>${esc(r.subject||"(uten emne)")}</h3>
+      <h3>${esc(r.title||r.subject||"(uten emne)")}</h3>
       <div class="meta"><span>${esc((r.received_at||"").slice(0,10))}</span>${locs.length?`<span class="sep">·</span><span>${esc(locs.join(" / "))}</span>`:""}</div>
       <div class="foot">
         <div class="bestmatch"><span class="pct txt-${tier(ta.pct)}">${ta.pct}%</span><span class="nm">${esc(ta.name)}</span></div>
@@ -450,10 +450,10 @@ function renderDetail(){
 
   const facHtml=rec.factors.map(f=>`<span class="fac ${f.tone}">${esc(f.label)} <b>${esc(f.val)}</b></span>`).join("");
   wrap.innerHTML=`<div class="detail">
-    <div class="detail-hd"><div class="hdrow"><div><div class="eyebrow">${esc(r.org_name||r.from_email||"")}</div><h2>${esc(r.subject||"(uten emne)")}</h2></div>
+    <div class="detail-hd"><div class="hdrow"><div><div class="eyebrow">${esc(r.org_name||r.from_email||"")}</div><h2>${esc(r.title||r.subject||"(uten emne)")}</h2></div>
       <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
       <div class="kv"><span>Fra <b>${esc(r.from_email||"")}</b></span><span>Til <b>${esc(r.to_email||"")}</b></span>
-        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}</div></div>
+        <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div></div>
     <div class="section actionbar">${actionHtml}</div>
     <div class="recbanner" style="--rcol:${rm.col}"><div class="recmain"><div class="recverdict">Anbefalt: ${rm.label}</div><div class="recwhy">${esc(rec.why)}</div></div><div class="recfactors">${facHtml}</div></div>
     ${orgSection}

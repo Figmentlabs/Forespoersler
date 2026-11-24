@@ -25,6 +25,11 @@ begrunnelse på norsk. Vær nøktern – høy score kun ved tydelig match. Sett 
 til hvor relevant oppdraget er for Figment samlet (typisk høyeste områdescore), og \
 best_area_key til beste område.
 
+Fastsett en kort OPPDRAGSTITTEL (rolle/stilling) hentet fra epostens INNHOLD, ikke \
+nødvendigvis emnefeltet – f.eks. «Senior prosjektleder – ERP-innføring». Broker-eposter \
+har ofte generiske emner mens den reelle rollen står i teksten. Inneholder eposten flere \
+roller, velg den mest sentrale. Er det ikke et konkret oppdrag, lag en kort beskrivende tittel.
+
 Fastsett oppdragets DOMENE (kort norsk etikett for bransje/sektor), f.eks. \
 «Offentlig sektor – helse», «Offentlig forvaltning», «Bank og finans», «Energi», \
 «Industri», «Transport».
@@ -57,6 +62,7 @@ class ScoringResult:
     scores: list[AreaScore]
     best_area_key: str
     total_score: int
+    title: str = ""
     domain: str = ""
     consultants: list[ConsultantScore] = field(default_factory=list)
     summary: str = ""
@@ -101,10 +107,11 @@ def _schema(area_keys: list[str], cons_ids: list[str]) -> dict[str, Any]:
         },
         "best_area_key": {"type": "string", "enum": area_keys},
         "total_score": {"type": "integer"},
+        "title": {"type": "string"},
         "domain": {"type": "string"},
         "summary": {"type": "string"},
     }
-    required = ["scores", "best_area_key", "total_score", "domain", "summary"]
+    required = ["scores", "best_area_key", "total_score", "title", "domain", "summary"]
     if cons_ids:
         props["consultants"] = {
             "type": "array",
@@ -194,6 +201,7 @@ class Scorer:
             scores=scores,
             best_area_key=data["best_area_key"],
             total_score=int(data["total_score"]),
+            title=data.get("title", ""),
             domain=data.get("domain", ""),
             consultants=cons,
             summary=data.get("summary", ""),
