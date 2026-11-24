@@ -8,6 +8,7 @@ Strukturert output (json_schema) sikrer gyldig JSON.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,6 +16,29 @@ import anthropic
 
 MAX_BODY_CHARS = 8000
 DOMAIN_LEVELS = ["svak", "middels", "sterk", "veldig_sterk"]
+MAX_CONSULTANTS = 25  # antall konsulenter KI-en vurderer per forespørsel
+_WORD = re.compile(r"[a-zæøå0-9]{3,}")
+
+
+def shortlist_consultants(consultants, subject, body, n=MAX_CONSULTANTS):
+    """Grov forhåndsutvelgelse på nøkkelord-overlapp, så KI-kallet holder seg
+    bundet selv med hundrevis av konsulenter. KI-en gjør den nyanserte
+    vurderingen på kortlista."""
+    if len(consultants) <= n:
+        return consultants
+    qwords = set(_WORD.findall(f"{subject} {body}".lower()))
+    if not qwords:
+        return consultants[:n]
+
+    def overlap(c):
+        bag = " ".join([
+            c.get("title") or "",
+            " ".join(c.get("skills") or []),
+            c.get("summary") or "",
+        ]).lower()
+        return len(qwords & set(_WORD.findall(bag)))
+
+    return sorted(consultants, key=overlap, reverse=True)[:n]
 
 SYSTEM_PROMPT = """Du er analytiker hos konsulentselskapet Figment (del av Sonatgruppen).
 Du vurderer innkomne oppdragsforespørsler fra brokere mot (1) Figments \
@@ -152,9 +176,10 @@ class Scorer:
         subject: str,
         body_text: str,
     ) -> ScoringResult:
+        body = (body_text or "")[:MAX_BODY_CHARS]
+        consultants = shortlist_consultants(consultants, subject, body)
         area_keys = [a["key"] for a in areas]
         cons_ids = [c["id"] for c in consultants]
-        body = (body_text or "")[:MAX_BODY_CHARS]
 
         parts = [
             "Figments tjenesteområder:",
@@ -176,7 +201,7 @@ class Scorer:
 
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=3000,
+            max_tokens=4000,
             system=SYSTEM_PROMPT,
             output_config={"effort": "low", "format": _schema(area_keys, cons_ids)},
             messages=[{"role": "user", "content": user_content}],

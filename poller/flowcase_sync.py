@@ -176,12 +176,33 @@ def map_consultant(user: dict, cv: dict) -> dict:
     }
 
 
+def list_offices() -> int:
+    """Lesemodus: skriv ut kontorene (id, navn, antall brukere). Ingen skriving.
+    Kjør: python flowcase_sync.py --offices"""
+    sub = _req("FLOWCASE_SUBDOMAIN")
+    key = _req("FLOWCASE_API_KEY")
+    fc = Flowcase(sub, key)
+    users = fc.users([])
+    counts: dict[str, int] = {}
+    names: dict[str, str] = {}
+    for u in users:
+        oid = str(u.get("office_id"))
+        counts[oid] = counts.get(oid, 0) + 1
+        if u.get("office_name"):
+            names[oid] = u["office_name"]
+    log.info("Kontorer i Flowcase (%d brukere totalt):", len(users))
+    for oid in sorted(counts, key=lambda k: counts[k], reverse=True):
+        log.info("  office_id=%s  %-30s  %d brukere", oid, names.get(oid, "(ukjent)"), counts[oid])
+    return 0
+
+
 def run() -> int:
     sub = _req("FLOWCASE_SUBDOMAIN")
     key = _req("FLOWCASE_API_KEY")
     sb = create_client(_req("SUPABASE_URL"), _req("SUPABASE_SERVICE_ROLE_KEY"))
     office_ids = [x.strip() for x in os.getenv("FLOWCASE_OFFICE_IDS", "").split(",") if x.strip()]
 
+    run_started = dt.datetime.now(dt.timezone.utc).isoformat()
     fc = Flowcase(sub, key)
     users = fc.users(office_ids)
     offices = sorted({f"{u.get('office_id')}:{u.get('office_name')}" for u in users if u.get("office_name")})
@@ -213,9 +234,29 @@ def run() -> int:
         except Exception as exc:
             log.warning("Opprydding av placeholder-konsulenter feilet: %s", exc)
 
+        # Rydd bort Flowcase-konsulenter som ikke lenger er i trefflista
+        # (f.eks. når synken begrenses til Figment-kontoret, eller noen
+        # deaktiveres). Alt som ble synket nå har fersk flowcase_synced_at;
+        # eldre tidsstempel = ikke med i denne kjøringen → slettes.
+        try:
+            res = (
+                sb.table("consultants")
+                .delete()
+                .not_.is_("flowcase_user_id", "null")
+                .lt("flowcase_synced_at", run_started)
+                .execute()
+            )
+            pruned = len(res.data or [])
+            if pruned:
+                log.info("Ryddet bort %d konsulent(er) utenfor gjeldende synk.", pruned)
+        except Exception as exc:
+            log.warning("Opprydding av foreldede konsulenter feilet: %s", exc)
+
     log.info("Ferdig. Synket %d konsulent(er) fra Flowcase.", synced)
     return 0
 
 
 if __name__ == "__main__":
+    if "--offices" in sys.argv:
+        sys.exit(list_offices())
     sys.exit(run())
