@@ -110,12 +110,17 @@ class Store:
         return res.data[0]["id"] if res.data else None
 
     def update_request_scoring(
-        self, request_id: str, best_area_id: str | None, total_score: int
+        self,
+        request_id: str,
+        best_area_id: str | None,
+        total_score: int,
+        domain: str | None = None,
     ) -> None:
         self.client.table("requests").update(
             {
                 "best_area_id": best_area_id,
                 "total_score": total_score,
+                "domain": domain,
                 "scored_at": datetime.now(timezone.utc).isoformat(),
             }
         ).eq("id", request_id).execute()

@@ -115,6 +115,8 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
             "consultant_id": c.consultant_id,
             "match_percent": max(0, min(100, c.match)),
             "reasoning": c.reasoning,
+            "domain_level": c.domain_level,
+            "domain_reasoning": c.domain_reasoning,
         }
         for c in result.consultants
         if c.consultant_id in cons_ids
@@ -122,7 +124,9 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
     store.insert_consultant_matches(crows)
 
     best_area_id = key_to_id.get(result.best_area_key)
-    store.update_request_scoring(request_id, best_area_id, max(0, min(100, result.total_score)))
+    store.update_request_scoring(
+        request_id, best_area_id, max(0, min(100, result.total_score)), result.domain or None
+    )
 
 
 def process_account(

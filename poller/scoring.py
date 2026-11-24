@@ -14,19 +14,26 @@ from typing import Any
 import anthropic
 
 MAX_BODY_CHARS = 8000
+DOMAIN_LEVELS = ["svak", "middels", "sterk", "veldig_sterk"]
 
 SYSTEM_PROMPT = """Du er analytiker hos konsulentselskapet Figment (del av Sonatgruppen).
 Du vurderer innkomne oppdragsforespørsler fra brokere mot (1) Figments \
-tjenesteområder og (2) aktuelle konsulenter.
+tjenesteområder, (2) aktuelle konsulenter og (3) domene (bransje/sektor).
 
 For hvert tjenesteområde: gi en score 0–100 for hvor godt oppdraget passer, med kort \
 begrunnelse på norsk. Vær nøktern – høy score kun ved tydelig match. Sett total_score \
 til hvor relevant oppdraget er for Figment samlet (typisk høyeste områdescore), og \
 best_area_key til beste område.
 
-For hver konsulent: gi en match 0–100 for hvor godt konsulenten passer oppdraget, \
-basert på rolle, ferdigheter og erfaring i masterCV-en, med kort, faktabasert \
-begrunnelse (bruk fornavn, ingen selgende prosa)."""
+Fastsett oppdragets DOMENE (kort norsk etikett for bransje/sektor), f.eks. \
+«Offentlig sektor – helse», «Offentlig forvaltning», «Bank og finans», «Energi», \
+«Industri», «Transport».
+
+For hver konsulent: gi (a) en match 0–100 for hvor godt konsulenten passer oppdraget \
+basert på rolle, ferdigheter og erfaring i masterCV-en, og (b) en domenematch – hvor \
+godt konsulentens domenekunnskap (fra CV/erfaring) passer oppdragets domene – på en \
+firetrinns skala: svak, middels, sterk, veldig_sterk. Gi kort, faktabasert begrunnelse \
+for begge (bruk fornavn, ingen selgende prosa)."""
 
 
 @dataclass
@@ -41,6 +48,8 @@ class ConsultantScore:
     consultant_id: str
     match: int
     reasoning: str
+    domain_level: str | None = None
+    domain_reasoning: str = ""
 
 
 @dataclass
@@ -48,6 +57,7 @@ class ScoringResult:
     scores: list[AreaScore]
     best_area_key: str
     total_score: int
+    domain: str = ""
     consultants: list[ConsultantScore] = field(default_factory=list)
     summary: str = ""
 
@@ -91,9 +101,10 @@ def _schema(area_keys: list[str], cons_ids: list[str]) -> dict[str, Any]:
         },
         "best_area_key": {"type": "string", "enum": area_keys},
         "total_score": {"type": "integer"},
+        "domain": {"type": "string"},
         "summary": {"type": "string"},
     }
-    required = ["scores", "best_area_key", "total_score", "summary"]
+    required = ["scores", "best_area_key", "total_score", "domain", "summary"]
     if cons_ids:
         props["consultants"] = {
             "type": "array",
@@ -103,8 +114,10 @@ def _schema(area_keys: list[str], cons_ids: list[str]) -> dict[str, Any]:
                     "consultant_id": {"type": "string", "enum": cons_ids},
                     "match": {"type": "integer"},
                     "reasoning": {"type": "string"},
+                    "domain_level": {"type": "string", "enum": DOMAIN_LEVELS},
+                    "domain_reasoning": {"type": "string"},
                 },
-                "required": ["consultant_id", "match", "reasoning"],
+                "required": ["consultant_id", "match", "reasoning", "domain_level", "domain_reasoning"],
                 "additionalProperties": False,
             },
         }
@@ -171,13 +184,17 @@ class Scorer:
             for s in data["scores"]
         ]
         cons = [
-            ConsultantScore(c["consultant_id"], int(c["match"]), c.get("reasoning", ""))
+            ConsultantScore(
+                c["consultant_id"], int(c["match"]), c.get("reasoning", ""),
+                c.get("domain_level"), c.get("domain_reasoning", ""),
+            )
             for c in data.get("consultants", [])
         ]
         return ScoringResult(
             scores=scores,
             best_area_key=data["best_area_key"],
             total_score=int(data["total_score"]),
+            domain=data.get("domain", ""),
             consultants=cons,
             summary=data.get("summary", ""),
         )
