@@ -43,6 +43,18 @@ class Store:
         )
         return res.data or []
 
+    def pending_requests(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Uscorede forespørsler (f.eks. manuelt importerte) som venter på scoring."""
+        res = (
+            self.client.table("requests")
+            .select("id, subject, title, body_text")
+            .is_("scored_at", "null")
+            .eq("status", "ny")
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+
     def record_skipped(self, domain: str, from_email: str | None, subject: str | None) -> None:
         """Logg et avsender-domene som ble filtrert bort (for UI-et «Hoppet over»)."""
         if not domain:

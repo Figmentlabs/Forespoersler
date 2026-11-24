@@ -51,6 +51,8 @@ input{font:inherit;color:var(--fg)}
 .viewnav{display:flex;gap:4px}
 .viewnav button{min-height:36px;padding:0 14px;border-radius:999px;border:0;background:transparent;color:var(--soft);font-size:14.5px;font-weight:500}
 .viewnav button[aria-current="true"]{background:var(--surface);color:var(--fg)}
+.importbtn{min-height:36px;padding:0 15px;border-radius:999px;border:1px solid var(--green);background:transparent;color:var(--green);font-size:14px;font-weight:600}
+.importbtn:hover{background:var(--hl)}
 .topbar .spacer{flex:1}
 .userchip{display:inline-flex;align-items:center;gap:9px}
 .userchip .uava{width:30px;height:30px;border-radius:50%;object-fit:cover;background:var(--ph);display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--soft)}
@@ -293,6 +295,7 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
         <button data-view="requests" aria-current="true">Forespørsler</button>
         <button data-view="settings" aria-current="false">Innstillinger</button>
       </nav>
+      <button class="importbtn" id="importbtn">+ Importer</button>
       <span class="spacer"></span>
       <span class="userchip" id="userchip">
         <span class="uava" id="uava"></span>
@@ -728,6 +731,38 @@ async function doQualifyGroup(chosenId, consultant_id){
     selectedId=null; await loadData();
   }catch(e){ toast("Kvalifisering feilet: "+e.message); }
 }
+function importModal(){
+  $("modalMount").innerHTML=`<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-hd"><h3>Importer forespørsel</h3></div>
+    <div class="modal-bd">
+      <p class="muted-note">Lim inn forespørselsteksten, gi eventuelle instruksjoner og legg ved filer. Systemet oppretter forespørselen og scorer den «på samme vis» som en e-post – den dukker opp i lista med anbefaling.</p>
+      <div class="field"><label for="imp-text">Forespørselstekst</label><textarea id="imp-text" style="min-height:150px" placeholder="Lim inn teksten fra oppdraget …"></textarea></div>
+      <div class="field"><label for="imp-instr">Instruksjoner (valgfritt)</label><textarea id="imp-instr" placeholder="F.eks. kilde, sluttkunde, hva vi bør vektlegge …"></textarea></div>
+      <div class="field"><label for="imp-files">Vedlegg (valgfritt)</label><input type="file" id="imp-files" multiple></div>
+      <div id="imp-status" class="hint"></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button>
+      <button class="btn btn-primary" data-act="do-import">Opprett forespørsel</button></div></div></div>`;
+}
+async function doImport(){
+  const text=($("imp-text").value||"").trim(), instr=($("imp-instr").value||"").trim(), st=$("imp-status");
+  if(text.length<10){ st.textContent="Forespørselsteksten er for kort."; return; }
+  const btn=document.querySelector('[data-act="do-import"]'); if(btn){ btn.disabled=true; btn.textContent="Oppretter …"; }
+  try{
+    const files=$("imp-files").files||[], atts=[];
+    for(const f of files){
+      if(st) st.textContent="Laster opp "+f.name+" …";
+      const path=`import/${Date.now()}_${f.name.replace(/[^\w.\-]+/g,"_")}`;
+      const up=await sb.storage.from("attachments").upload(path, f, {upsert:true});
+      if(!up.error) atts.push({filename:f.name, storage_path:path, content_type:f.type||null, size_bytes:f.size||null});
+    }
+    if(st) st.textContent="Oppretter og scorer …";
+    await callFn("import-request",{text, instructions:instr, attachments:atts});
+    toast("Forespørsel opprettet – scores nå");
+    closeModal(); await loadData();
+    setTimeout(loadData, 9000); setTimeout(loadData, 22000);
+  }catch(e){ if(st) st.textContent="Import feilet: "+(e.message||e); if(btn){ btn.disabled=false; btn.textContent="Opprett forespørsel"; } }
+}
 async function doMoveCat(r){
   const to=(catOf(r)==="klar")?"mulig":"klar";
   const btn=document.querySelector('[data-act="movecat"]'); if(btn){ btn.disabled=true; btn.textContent="Flytter …"; }
@@ -846,6 +881,7 @@ $("modalMount").addEventListener("click",e=>{
   const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }
   const pb=e.target.closest('[data-act="pick-broker"]'); if(pb){ pendingGroupBroker=pb.dataset.rid; qualifyConsultantModal(REQUESTS.find(x=>x.id===pb.dataset.rid), true); return; }
   const pc=e.target.closest('[data-act="pick-consultant"]'); if(pc){ const cid=pc.dataset.cid||""; if(pc.dataset.group==="1"){ doQualifyGroup(pendingGroupBroker, cid); } else { doQualify(REQUESTS.find(x=>x.id===pc.dataset.rid), cid); } return; }
+  if(e.target.closest('[data-act="do-import"]')){ doImport(); return; }
   if(e.target.closest('[data-act="confirm-reject"]')){ const t=$("rr"); doReject(pendingReject, (t&&t.value.trim())||""); }});
 $("modalMount").addEventListener("change",e=>{ if(e.target.id==="cv-file") onCvFile(e.target); });
 $("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("[data-act]"); if(!b) return;
@@ -860,6 +896,7 @@ $("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("
     if(b.dataset.act==="edit-con"){ consultantModal(CONSULTS.find(c=>c.id===b.dataset.id)); }
     if(b.dataset.act==="del-con"){ const c=CONSULTS.find(x=>x.id===b.dataset.id); if(!window.confirm("Slette "+(c?c.name:"konsulent")+"?")) return; await sb.from("consultants").delete().eq("id",b.dataset.id); await loadData(); render(); toast("Konsulent slettet"); }
   }catch(err){ toast("Handling feilet: "+err.message); }});
+$("importbtn").addEventListener("click", importModal);
 $("logout").addEventListener("click",()=> sb.auth.signOut());
 $("loginbtn").addEventListener("click",()=> sb.auth.signInWithOAuth({ provider:"google", options:{ redirectTo: location.origin+location.pathname } }));
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); });

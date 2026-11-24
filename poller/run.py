@@ -147,6 +147,26 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
     store.set_customer(request_id, result.customer)
 
 
+def score_pending(store, scorer, areas, consultants, examples) -> int:
+    """Score forespørsler som mangler scoring (manuell import o.l.)."""
+    pend = store.pending_requests()
+    for r in pend:
+        try:
+            candidates = store.open_candidates(r["id"])
+            result = scorer.score(areas, consultants, r.get("subject") or "",
+                                  r.get("body_text") or "", examples, candidates)
+            _store_scores(store, r["id"], areas, consultants, result)
+            if result.same_opportunity_id:
+                store.link_same_opportunity(r["id"], result.same_opportunity_id)
+            log.info("scoret ventende '%s' → %s (%d)",
+                     (r.get("title") or r.get("subject") or "")[:50],
+                     result.best_area_key, result.total_score)
+        except Exception as exc:
+            log.error("scoring feilet for ventende %s: %s", r["id"], exc)
+            store.mark_request_error(r["id"])
+    return len(pend)
+
+
 def process_account(
     cfg: Config, store: Store, scorer: Scorer, areas, consultants, domains, acc: ImapAccount,
     examples=None,
@@ -236,7 +256,13 @@ def run() -> int:
         except Exception as exc:
             log.error("[%s] konto feilet: %s", acc.email, exc)
 
-    log.info("Ferdig. Behandlet %d ny(e) forespørsel(er).", total)
+    try:
+        pending = score_pending(store, scorer, areas, consultants, examples)
+    except Exception as exc:
+        pending = 0
+        log.error("Scoring av ventende feilet: %s", exc)
+
+    log.info("Ferdig. Behandlet %d ny(e) + scoret %d ventende forespørsel(er).", total, pending)
     return 0
 
 
