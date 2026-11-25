@@ -329,7 +329,7 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
     <div class="toolbar">
       <div class="tabs" id="tabs" role="group" aria-label="Filtrer på status"></div>
       <span class="spacer"></span>
-      <span class="sortnote">Sortert på matchscore</span>
+      <span class="sortnote">Sortert på dato (nyeste øverst)</span>
     </div>
     <div class="layout">
       <div class="list" id="list" role="list"></div>
@@ -432,7 +432,7 @@ function groupVisible(){
       if(seen.has(gid)) continue;
       seen.add(gid);
       const members=rs.filter(x=>x.opportunity_group_id===gid);
-      const rep=members.slice().sort((a,b)=>topArea(b).pct-topArea(a).pct)[0];
+      const rep=members.slice().sort((a,b)=>recTime(b)-recTime(a))[0];
       out.push({rep, members});
     } else out.push({rep:r, members:[r]});
   }
@@ -507,7 +507,8 @@ function catOf(r){ return r.category||"mulig"; }
 function afterCategory(){ return afterLocation().filter(r=>catOf(r)===selCat); }
 function catCounts(){ const b=afterLocation(); let klar=0,mulig=0; b.forEach(r=>{catOf(r)==="klar"?klar++:mulig++}); return {klar,mulig}; }
 function counts(){ const b=afterCategory(); const c={ny:0,kvalifisert:0,avvist:0,feil:0,alle:b.length}; b.forEach(r=>{c[r.status]=(c[r.status]||0)+1}); return c; }
-function visible(){ let rs=afterCategory(); if(filter!=="alle") rs=rs.filter(r=>r.status===filter); return rs.sort((a,b)=>topArea(b).pct-topArea(a).pct); }
+function recTime(r){ const t=Date.parse(r.received_at||""); return isNaN(t)?0:t; }
+function visible(){ let rs=afterCategory(); if(filter!=="alle") rs=rs.filter(r=>r.status===filter); return rs.sort((a,b)=>recTime(b)-recTime(a)); }
 function allLocations(){ const s=new Set(); REQUESTS.forEach(r=>locsOf(r).forEach(l=>s.add(l))); return [...s]; }
 
 // ---------- Render ----------
