@@ -115,6 +115,26 @@ class Store:
             {"last_sync": datetime.now(timezone.utc).isoformat()}
         ).eq("email", email).execute()
 
+    # --- Brukerkoblede Gmail-postkasser (OAuth) ---
+    def gmail_connections(self) -> list[dict[str, Any]]:
+        res = (
+            self.client.table("gmail_connections")
+            .select("user_id, email, refresh_token")
+            .eq("status", "connected")
+            .execute()
+        )
+        return res.data or []
+
+    def update_gmail_sync(self, user_id: str, ok: bool = True, error: str | None = None) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        status = "connected" if ok else "error"
+        self.client.table("gmail_connections").update(
+            {"last_sync": now, "status": status, "last_error": error, "updated_at": now}
+        ).eq("user_id", user_id).execute()
+        self.client.table("app_users").update(
+            {"gmail_last_sync": now, "gmail_status": status}
+        ).eq("id", user_id).execute()
+
     # --- Tilstand (siste UID per konto+mappe) ---
     def get_last_uid(self, mailbox: str) -> int:
         res = (

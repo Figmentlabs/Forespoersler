@@ -47,6 +47,7 @@ except Exception:
 
 from config import Config, ConfigError, ImapAccount
 from email_parser import ParsedEmail, parse_email
+from gmail_client import access_token, build_query, get_raw, list_message_ids
 from imap_client import ImapClient
 from scoring import Scorer, ScoringResult
 from supabase_client import Store
@@ -229,6 +230,58 @@ def process_account(
     return processed
 
 
+def process_gmail(
+    cfg: Config, store: Store, scorer: Scorer, areas, consultants, domains, conn, examples=None,
+) -> int:
+    """Hent nye broker-e-poster fra én brukerkoblet Gmail-konto (OAuth)."""
+    if not (cfg.google_client_id and cfg.google_client_secret):
+        raise ConfigError("GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET mangler – kan ikke hente Gmail.")
+    email = conn.get("email") or ""
+    account_id = store.inbox_account_id(email)  # som regel None for Gmail-kontoer
+    token = access_token(cfg.google_client_id, cfg.google_client_secret, conn["refresh_token"])
+    query = build_query(domains if cfg.filter_domains else None, POLL_LOOKBACK_DAYS)
+    ids = list_message_ids(token, query, cfg.max_fetch)
+    log.info("[gmail:%s] %d melding(er) matcher søk (%s)", email, len(ids), query)
+
+    processed = 0
+    for mid in ids:
+        try:
+            mail = parse_email(get_raw(token, mid))
+        except Exception as exc:
+            log.warning("[gmail:%s] kunne ikke hente/parse %s: %s", email, mid, exc)
+            continue
+
+        if cfg.filter_domains and domains and domain_of(mail.from_email) not in domains:
+            store.record_skipped(domain_of(mail.from_email), mail.from_email, mail.subject)
+            continue
+
+        chash = content_hash(mail)
+        if store.request_exists(mail.message_id, chash):
+            continue
+
+        request_id = _store_request(store, mail, chash, account_id)
+        if not request_id:
+            continue
+
+        _store_attachments(store, request_id, mail)
+        try:
+            candidates = store.open_candidates(request_id)
+            result = scorer.score(areas, consultants, mail.subject or "", mail.body_text or "",
+                                  examples, candidates)
+            _store_scores(store, request_id, areas, consultants, result)
+            if result.same_opportunity_id:
+                store.link_same_opportunity(request_id, result.same_opportunity_id)
+            log.info("[gmail:%s] scoret '%s' → %s (%d)", email, (mail.subject or "")[:50],
+                     result.best_area_key, result.total_score)
+        except Exception as exc:
+            log.error("[gmail:%s] scoring feilet for %s: %s", email, request_id, exc)
+            store.mark_request_error(request_id)
+        processed += 1
+
+    store.update_gmail_sync(conn["user_id"], ok=True)
+    return processed
+
+
 def run() -> int:
     try:
         cfg = Config.from_env()
@@ -255,6 +308,19 @@ def run() -> int:
             total += process_account(cfg, store, scorer, areas, consultants, domains, acc, examples)
         except Exception as exc:
             log.error("[%s] konto feilet: %s", acc.email, exc)
+
+    # Brukerkoblede Gmail-postkasser (selvbetjent OAuth)
+    conns = store.gmail_connections()
+    log.info("%d brukerkoblet Gmail-konto(er)", len(conns))
+    for c in conns:
+        try:
+            total += process_gmail(cfg, store, scorer, areas, consultants, domains, c, examples)
+        except Exception as exc:
+            log.error("[gmail:%s] konto feilet: %s", c.get("email"), exc)
+            try:
+                store.update_gmail_sync(c["user_id"], ok=False, error=str(exc)[:500])
+            except Exception:
+                pass
 
     try:
         pending = score_pending(store, scorer, areas, consultants, examples)

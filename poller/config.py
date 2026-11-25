@@ -40,6 +40,8 @@ class Config:
     anthropic_api_key: str
     anthropic_model: str
     max_fetch: int
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
     filter_domains: bool = True  # hopp over avsendere utenfor sender_domains
 
     @classmethod
@@ -61,7 +63,9 @@ class Config:
                     )
             except (json.JSONDecodeError, KeyError) as exc:
                 raise ConfigError(f"Ugyldig IMAP_ACCOUNTS: {exc}") from exc
-        else:
+        elif os.getenv("IMAP_USER"):
+            # Valgfri felles-postkasse via klassisk IMAP (brukerkoblede Gmail-kontoer
+            # håndteres via gmail_connections i databasen, ikke her).
             user = _req("IMAP_USER")
             accounts.append(
                 ImapAccount(
@@ -82,5 +86,7 @@ class Config:
             anthropic_api_key=_req("ANTHROPIC_API_KEY"),
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5"),
             max_fetch=int(os.getenv("MAX_FETCH", "50")),
+            google_client_id=os.getenv("GOOGLE_CLIENT_ID") or None,
+            google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET") or None,
             filter_domains=os.getenv("FILTER_DOMAINS", "true").lower() != "false",
         )

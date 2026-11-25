@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kobler Gmail …</title>
+<style>
+  :root{ --bg:#1C1820; --fg:#F4EDE4; --muted:#9a9289; }
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px}
+  .box{max-width:420px}
+  .spin{width:34px;height:34px;border:3px solid rgba(244,237,228,.2);border-top-color:#4BC2A2;border-radius:50%;margin:0 auto 18px;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  p{color:var(--muted);line-height:1.6}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+</head>
+<body>
+  <div class="box">
+    <div class="spin" id="spin"></div>
+    <h2 id="title">Kobler til Gmail …</h2>
+    <p id="msg">Et øyeblikk – vi fullfører koblingen og sender deg tilbake.</p>
+  </div>
+<script>
+const SUPABASE_URL = "https://wocrhuiyzrckxihqzrla.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndvY3JodWl5enJja3hpaHF6cmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU0NDE3NDcsImV4cCI6MjExMTAxNzc0N30.CKXkBswIQlHXIM3U3LkbnVuUwDQvRxhZR1O9fwHdKqM";
+
+// detectSessionInUrl: false — her ligger Gmail-koden i URL, ikke en Supabase-auth-kode.
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, flowType: "pkce",
+          lock: (_n,_t,fn)=>fn() },
+});
+
+function back(params){ location.replace("./?" + params); }
+
+(async () => {
+  try {
+    const q = new URLSearchParams(location.search || "");
+    const err = q.get("error");
+    if (err) return back("gmail=error&msg=" + encodeURIComponent(q.get("error_description") || err));
+    const code = q.get("code"), state = q.get("state");
+    if (!code || !state) return back("gmail=error&msg=" + encodeURIComponent("Mangler kode fra Google"));
+
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return back("gmail=error&msg=" + encodeURIComponent("Du må være innlogget – prøv igjen"));
+
+    const redirect_uri = location.origin + location.pathname;
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/gmail-oauth-exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON, Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ code, state, redirect_uri }),
+    });
+    let out = {}; try { out = await res.json(); } catch (_) {}
+    if (!res.ok || out.error) return back("gmail=error&msg=" + encodeURIComponent(out.error || ("HTTP " + res.status)));
+    back("gmail=connected");
+  } catch (e) {
+    back("gmail=error&msg=" + encodeURIComponent(String((e && e.message) || e)));
+  }
+})();
+</script>
+</body>
+</html>

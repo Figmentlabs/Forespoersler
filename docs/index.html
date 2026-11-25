@@ -381,7 +381,7 @@ const OFFICE = ["Oslo","Bergen"];
 const PIPEDRIVE_DOMAIN = "sonat";
 const dealUrl = id => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${encodeURIComponent(id)}`;
 
-let REQUESTS = [], ACCOUNTS = [], DOMAINS = [], CONSULTS = [], SKIPPED = [];
+let REQUESTS = [], USERS = [], DOMAINS = [], CONSULTS = [], SKIPPED = [], pendingToast = null;
 let pendingCvPath = null;
 let view="requests", filter="ny", selCat="klar", selLoc=new Set(), selectedId=null, me=null;
 const CATLABEL = {klar:"Verifiserte forespørsler", mulig:"Mulige forespørsler"};
@@ -489,15 +489,15 @@ async function loadData(){
     + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(id,name,title,company,location,years_experience,skills,keywords,certifications,summary,flowcase_user_id))`;
-  const [{data:reqs, error:e1}, {data:accs}, {data:doms}, {data:cons}, {data:skip}] = await Promise.all([
+  const [{data:reqs, error:e1}, {data:usrs}, {data:doms}, {data:cons}, {data:skip}] = await Promise.all([
     sb.from("requests").select(sel).order("total_score",{ascending:false, nullsFirst:false}),
-    sb.from("inbox_accounts").select("*").order("email"),
+    sb.from("app_users").select("*").order("last_seen",{ascending:false}),
     sb.from("sender_domains").select("*").order("domain"),
     sb.from("consultants").select("id,name,title,location,years_experience,email,skills,keywords,certifications,summary,master_cv,available,flowcase_user_id").order("name"),
     sb.from("skipped_senders").select("*").order("last_seen",{ascending:false}),
   ]);
   if(e1){ toast("Kunne ikke hente data: "+e1.message); }
-  REQUESTS = reqs||[]; ACCOUNTS = accs||[]; DOMAINS = doms||[]; CONSULTS = cons||[]; SKIPPED = skip||[];
+  REQUESTS = reqs||[]; USERS = usrs||[]; DOMAINS = doms||[]; CONSULTS = cons||[]; SKIPPED = skip||[];
   if(!selectedId || !REQUESTS.some(r=>r.id===selectedId)) selectedId = visible()[0]?.id || null;
   render();
 }
@@ -651,16 +651,23 @@ function renderDetail(){
 }
 function renderSettings(){
   const roleNote = me ? `${esc(me.email)}` : "—";
-  const accRows = ACCOUNTS.map(a=>`<div class="row"><div class="main"><div class="t">${esc(a.email)}</div><div class="s">IMAP · ${esc(a.imap_host||"—")}${a.last_sync?` · sist synk ${esc(a.last_sync.slice(0,16).replace("T"," "))}`:""}</div></div>
-      <div class="right"><span class="statusdot">${a.active?"Aktiv":"Av"}</span><button class="x" data-act="rm-account" data-id="${a.id}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen kontoer ennå.</div></div>';
+  const meRow = USERS.find(u=>u.id===(me&&me.id));
+  const gmailBox = (meRow && meRow.gmail_connected)
+    ? `<div class="row"><div class="main"><div class="t">${esc(meRow.gmail_email||(me&&me.email)||"")}</div><div class="s">Koblet${meRow.gmail_connected_at?` ${esc(meRow.gmail_connected_at.slice(0,10))}`:""}${meRow.gmail_last_sync?` · sist synk ${esc(meRow.gmail_last_sync.slice(0,16).replace("T"," "))}`:""}</div></div>
+        <div class="right"><span class="statusdot">Aktiv</span><button class="btn btn-ghost btn-sm" data-act="disconnect-gmail">Koble fra</button></div></div>`
+    : `<div class="row"><div class="main"><div class="s">Ingen Gmail koblet ennå.</div></div><div class="right"><button class="btn btn-ghost btn-sm" data-act="connect-gmail">Koble Gmail</button></div></div>`;
+  const userRows = USERS.map(u=>`<div class="row"><div class="main"><div class="t">${esc(u.name||u.email)}</div><div class="s">${esc(u.email)}${u.last_seen?` · sist sett ${esc(u.last_seen.slice(0,10))}`:""}</div></div>
+      <div class="right"><span class="statusdot">${u.gmail_connected?"Gmail koblet":"Ingen Gmail"}</span></div></div>`).join("") || '<div class="row"><div class="s">Ingen registrerte brukere ennå.</div></div>';
   const domRows = DOMAINS.map(d=>`<div class="row"><div class="main"><div class="t">${esc(d.domain)}</div><div class="s">${esc(d.label||"—")}</div></div>
       <div class="right"><button class="x" data-act="rm-domain" data-id="${d.id}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen domener ennå.</div></div>';
   const monitored = new Set(DOMAINS.map(d=>(d.domain||"").toLowerCase()));
   const skipRows = SKIPPED.filter(s=>!monitored.has((s.domain||"").toLowerCase())).map(s=>`<div class="row"><div class="main"><div class="t">${esc(s.domain)}</div><div class="s">${esc(s.example_from||"")}${s.times_seen?` · sett ${s.times_seen}×`:""}${s.example_subject?` · «${esc((s.example_subject||"").slice(0,44))}»`:""}</div></div>
       <div class="right"><button class="btn btn-ghost btn-sm" data-act="add-skipped" data-domain="${esc(s.domain)}">Legg til</button><button class="x" data-act="dismiss-skipped" data-domain="${esc(s.domain)}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen filtrerte avsendere registrert ennå.</div></div>';
   $("settingsBody").innerHTML = `
-    <div class="panel"><div class="panel-hd"><h3>Brukere og tilgang</h3><p>Tilgang styres av Figment-innlogging. Bare @figment.no / @sonat.no-kontoer slipper inn.</p></div>
-      <div class="panel-bd"><div class="row"><div class="main"><div class="t">${roleNote}</div><div class="s">Pålogget nå</div></div><div class="right"><span class="statusdot">Pålogget</span></div></div></div></div>
+    <div class="panel"><div class="panel-hd"><h3>Din Gmail-postkasse</h3><p>Koble din egen Gmail så forespørsler fra brokerne plukkes opp automatisk. Kun lesetilgang – vi sender eller sletter aldri e-post.</p></div>
+      <div class="panel-bd">${gmailBox}</div></div>
+    <div class="panel"><div class="panel-hd"><h3>Registrerte brukere</h3><p>Alle som har logget inn med @figment.no / @sonat.no. Skrivebeskyttet – ingen innlogging eller passord kan redigeres her.</p></div>
+      <div class="panel-bd">${userRows}</div></div>
     <div class="panel"><div class="panel-hd"><h3>Konsulenter</h3><p>Legg til konsulenter, rediger navn og felt, og last opp CV-er.</p></div>
       <div class="panel-bd">
         ${CONSULTS.map(c=>`<div class="conrow"><div class="cava">${esc(initials(c.name))}</div>
@@ -668,8 +675,6 @@ function renderSettings(){
           <div class="right"><button class="linkbtn" data-act="edit-con" data-id="${c.id}">Rediger</button><button class="x" data-act="del-con" data-id="${c.id}" aria-label="Slett">×</button></div></div>`).join("") || '<div class="conrow"><div class="s">Ingen konsulenter ennå.</div></div>'}
         <div class="addform"><button class="btn btn-ghost btn-sm" data-act="add-con">Legg til konsulent</button></div>
       </div></div>
-    <div class="panel"><div class="panel-hd"><h3>Tilkoblede kontoer</h3><p>Postkassene brokerne sender til. Passord ligger kun i polleren, aldri her.</p></div>
-      <div class="panel-bd">${accRows}<div class="addform"><input id="acc-email" type="email" placeholder="ny.konto@figment.no"><input id="acc-host" type="text" placeholder="imap.gmail.com"><button class="btn btn-ghost btn-sm" data-act="add-account">Legg til</button></div></div></div>
     <div class="panel"><div class="panel-hd"><h3>Overvåkede avsenderdomener</h3><p>Bare e-post fra disse domenene plukkes opp.</p></div>
       <div class="panel-bd">${domRows}<div class="addform"><input id="dom-domain" type="text" placeholder="domene.no"><input id="dom-label" type="text" placeholder="Brokernavn (valgfritt)"><button class="btn btn-ghost btn-sm" data-act="add-domain">Legg til</button></div></div></div>
     <div class="panel"><div class="panel-hd"><h3>Hoppet over avsendere</h3><p>Domener polleren nylig filtrerte bort. Hører et oppdrag hjemme her, legg domenet til med ett klikk.</p></div>
@@ -779,6 +784,17 @@ async function callFn(name, body){
   let out={}; try{ out=await res.json(); }catch(_){}
   if(!res.ok || out.error) throw new Error(out.error||("HTTP "+res.status));
   return out;
+}
+async function connectGmail(){
+  try{
+    const redirect_uri = new URL("gmail-callback.html", location.href).href;
+    const { url } = await callFn("gmail-oauth-start", { redirect_uri });
+    location.href = url;
+  }catch(e){ toast("Kunne ikke starte Gmail-kobling: "+e.message); }
+}
+async function disconnectGmail(){
+  try{ await callFn("gmail-disconnect", {}); toast("Gmail koblet fra"); await loadData(); }
+  catch(e){ toast("Kunne ikke koble fra: "+e.message); }
 }
 let pendingGroupBroker=null;
 function qualifyConsultantModal(r, isGroup){
@@ -998,9 +1014,9 @@ $("modalMount").addEventListener("click",e=>{
 $("modalMount").addEventListener("change",e=>{ if(e.target.id==="cv-file") onCvFile(e.target); });
 $("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("[data-act]"); if(!b) return;
   try{
-    if(b.dataset.act==="rm-account"){ await sb.from("inbox_accounts").delete().eq("id",b.dataset.id); await loadData(); }
+    if(b.dataset.act==="connect-gmail"){ await connectGmail(); }
+    if(b.dataset.act==="disconnect-gmail"){ if(window.confirm("Koble fra Gmail? Forespørsler fra din postkasse slutter å hentes.")) await disconnectGmail(); }
     if(b.dataset.act==="rm-domain"){ await sb.from("sender_domains").delete().eq("id",b.dataset.id); await loadData(); }
-    if(b.dataset.act==="add-account"){ const em=$("acc-email").value.trim(); if(em){ await sb.from("inbox_accounts").insert({email:em, imap_host:$("acc-host").value.trim()||null}); await loadData(); toast("Konto lagt til"); }}
     if(b.dataset.act==="add-domain"){ const dm=$("dom-domain").value.trim().toLowerCase(); if(dm){ await sb.from("sender_domains").insert({domain:dm, label:$("dom-label").value.trim()||null}); await loadData(); toast("Domene lagt til"); }}
     if(b.dataset.act==="add-skipped"){ const dm=(b.dataset.domain||"").toLowerCase(); if(dm){ await sb.from("sender_domains").insert({domain:dm}); await sb.from("skipped_senders").delete().eq("domain",dm); await loadData(); toast("La til "+dm); }}
     if(b.dataset.act==="dismiss-skipped"){ await sb.from("skipped_senders").delete().eq("domain",b.dataset.domain); await loadData(); }
@@ -1032,7 +1048,10 @@ async function handleSession(session){
   const email=(session.user.email||"").toLowerCase();
   const ok = ALLOWED_DOMAINS.some(d=>email.endsWith("@"+d));
   if(!ok){ await sb.auth.signOut(); showGate("denied", email); return; }
-  me = session.user; showApp(); await loadData();
+  me = session.user; showApp();
+  try{ await sb.from("app_users").upsert({ id: me.id, email: me.email, name: me.user_metadata?.full_name || null, last_seen: new Date().toISOString() }, { onConflict: "id" }); }catch(_){}
+  await loadData();
+  if(pendingToast){ toast(pendingToast); pendingToast=null; }
 }
 function urlAuthError(){
   try{
@@ -1053,6 +1072,8 @@ async function init(){
   showGate("loading");
   const ae=urlAuthError();
   if(ae){ try{ history.replaceState(null,"",location.pathname); }catch(_){}; showGate("error", ae); return; }
+  const gp=new URLSearchParams(location.search||"");
+  if(gp.get("gmail")){ const st=gp.get("gmail"), msg=gp.get("msg"); pendingToast = st==="connected" ? "Gmail koblet til" : ("Gmail-kobling feilet"+(msg?": "+msg:"")); try{ history.replaceState(null,"",location.pathname); }catch(_){} }
   sb.auth.onAuthStateChange((evt, session)=>{
     if(session) showFor(session);
     else if(evt==="SIGNED_OUT"){ authShown=false; me=null; showGate("out"); }
