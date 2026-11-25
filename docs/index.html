@@ -977,7 +977,7 @@ $("viewnav").addEventListener("click",e=>{ const b=e.target.closest("[data-view]
 $("catnav").addEventListener("click",e=>{ const b=e.target.closest("[data-cat]"); if(!b) return; selCat=b.dataset.cat; selectedId=visible()[0]?.id||null; render(); });
 $("locchips").addEventListener("click",e=>{ const b=e.target.closest("[data-loc]"); if(!b) return; const l=b.dataset.loc; selLoc.has(l)?selLoc.delete(l):selLoc.add(l); render(); });
 $("locclear").addEventListener("click",()=>{ selLoc.clear(); render(); });
-$("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if(b){ filter=b.dataset.f; render(); }});
+$("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if(b){ filter=b.dataset.f; selectedId=visible()[0]?.id||null; render(); }});
 $("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b){ selectedId=b.dataset.id; render(); if(window.matchMedia("(max-width:860px)").matches) $("detailWrap").scrollIntoView({behavior:"smooth"}); }});
 $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="selectreq"){ selectedId=b.dataset.rid; render(); return; }
   if(b.dataset.act==="openatt"){ openAttachment(b.dataset.path, b.dataset.name); return; }
