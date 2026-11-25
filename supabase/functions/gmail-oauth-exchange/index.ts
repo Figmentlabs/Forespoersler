@@ -80,20 +80,13 @@ Deno.serve(async (req) => {
   const now = new Date().toISOString();
   const expiry = new Date(Date.now() + Number(tok.expires_in || 3600) * 1000).toISOString();
 
+  // En databasetrigger speiler status til app_users automatisk.
   await sb("gmail_connections?on_conflict=user_id", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify({
       user_id: user.id, email: gmail, refresh_token, access_token, token_expiry: expiry,
       scope: tok.scope || null, status: "connected", last_error: null, connected_at: now, updated_at: now,
-    }),
-  });
-  await sb("app_users?on_conflict=id", {
-    method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({
-      id: user.id, email: user.email || gmail,
-      gmail_connected: true, gmail_email: gmail, gmail_status: "connected", gmail_connected_at: now,
     }),
   });
 

@@ -44,11 +44,8 @@ Deno.serve(async (req) => {
   const rows = await sb(`gmail_connections?user_id=eq.${user.id}&select=refresh_token`);
   const rt = rows?.[0]?.refresh_token as string | undefined;
 
+  // En databasetrigger nullstiller app_users-speilet ved sletting.
   await sb(`gmail_connections?user_id=eq.${user.id}`, { method: "DELETE" });
-  await sb(`app_users?id=eq.${user.id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ gmail_connected: false, gmail_email: null, gmail_status: null, gmail_connected_at: null, gmail_last_sync: null }),
-  });
 
   if (rt) { try { await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(rt)}`, { method: "POST" }); } catch { /* best effort */ } }
 
