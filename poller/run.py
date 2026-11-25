@@ -133,7 +133,7 @@ def _store_scores(store, request_id, areas, consultants, result: ScoringResult) 
     best_area_id = key_to_id.get(result.best_area_key)
     store.update_request_scoring(
         request_id, best_area_id, max(0, min(100, result.total_score)),
-        result.domain or None, result.title or None,
+        result.domain or None, result.title or None, result.subarea or None,
     )
     store.update_request_category(
         request_id, result.category or "mulig",

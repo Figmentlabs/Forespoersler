@@ -50,6 +50,10 @@ begrunnelse på norsk. Vær nøktern – høy score kun ved tydelig match. Sett 
 til hvor relevant oppdraget er for Figment samlet (typisk høyeste områdescore), og \
 best_area_key til beste område.
 
+Velg UNDERKATEGORI (subarea): underpunktet under beste tjenesteområde som best \
+beskriver hva oppdraget konkret gjelder. Bruk nøyaktig ett av underpunktene som er \
+listet for tjenesteområdene over. Tom streng hvis ingen passer.
+
 Fastsett en kort OPPDRAGSTITTEL (rolle/stilling) hentet fra epostens INNHOLD, ikke \
 nødvendigvis emnefeltet – f.eks. «Senior prosjektleder – ERP-innføring». Broker-eposter \
 har ofte generiske emner mens den reelle rollen står i teksten. Inneholder eposten flere \
@@ -124,6 +128,7 @@ class ScoringResult:
     best_area_key: str
     total_score: int
     title: str = ""
+    subarea: str = ""
     domain: str = ""
     category: str = "mulig"
     category_confidence: int = 0
@@ -187,7 +192,8 @@ def _candidates_block(candidates: list[dict[str, Any]]) -> str:
 
 
 def _schema(area_keys: list[str], cons_ids: list[str],
-            candidate_ids: list[str] | None = None) -> dict[str, Any]:
+            candidate_ids: list[str] | None = None,
+            subitems: list[str] | None = None) -> dict[str, Any]:
     props: dict[str, Any] = {
         "scores": {
             "type": "array",
@@ -205,6 +211,7 @@ def _schema(area_keys: list[str], cons_ids: list[str],
         "best_area_key": {"type": "string", "enum": area_keys},
         "total_score": {"type": "integer"},
         "title": {"type": "string"},
+        "subarea": {"type": "string", "enum": [""] + (subitems or [])},
         "domain": {"type": "string"},
         "category": {"type": "string", "enum": ["klar", "mulig"]},
         "category_confidence": {"type": "integer"},
@@ -219,7 +226,7 @@ def _schema(area_keys: list[str], cons_ids: list[str],
         "same_opportunity_id": {"type": "string", "enum": [""] + (candidate_ids or [])},
         "summary": {"type": "string"},
     }
-    required = ["scores", "best_area_key", "total_score", "title", "domain",
+    required = ["scores", "best_area_key", "total_score", "title", "subarea", "domain",
                 "category", "category_confidence", "category_reasoning",
                 "locations", "customer", "start_date", "duration",
                 "start_iso", "end_iso", "assumed_product",
@@ -272,6 +279,7 @@ class Scorer:
         area_keys = [a["key"] for a in areas]
         cons_ids = [c["id"] for c in consultants]
         candidate_ids = [c["id"] for c in candidates]
+        subitems = sorted({s for a in areas for s in (a.get("subitems") or [])})
 
         parts = [
             "Figments tjenesteområder:",
@@ -309,7 +317,7 @@ class Scorer:
             max_tokens=4000,
             system=SYSTEM_PROMPT,
             output_config={"effort": "low",
-                           "format": _schema(area_keys, cons_ids, candidate_ids)},
+                           "format": _schema(area_keys, cons_ids, candidate_ids, subitems)},
             messages=[{"role": "user", "content": user_content}],
         )
         text = next((b.text for b in response.content if b.type == "text"), None)
@@ -333,6 +341,7 @@ class Scorer:
             best_area_key=data["best_area_key"],
             total_score=int(data["total_score"]),
             title=data.get("title", ""),
+            subarea=data.get("subarea", "") or "",
             domain=data.get("domain", ""),
             category=data.get("category", "mulig"),
             category_confidence=int(data.get("category_confidence", 0) or 0),

@@ -172,6 +172,7 @@ class Store:
         total_score: int,
         domain: str | None = None,
         title: str | None = None,
+        subarea: str | None = None,
     ) -> None:
         self.client.table("requests").update(
             {
@@ -179,6 +180,7 @@ class Store:
                 "total_score": total_score,
                 "domain": domain,
                 "title": title,
+                "subarea": subarea,
                 "scored_at": datetime.now(timezone.utc).isoformat(),
             }
         ).eq("id", request_id).execute()

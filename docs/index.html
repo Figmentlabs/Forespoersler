@@ -46,13 +46,26 @@ input{font:inherit;color:var(--fg)}
 .topbar-in{display:flex;align-items:center;gap:12px 20px;padding-block:14px;flex-wrap:wrap}
 .brand{display:inline-flex;align-items:center;gap:14px}
 .brand .wordmark{font-size:18px}
-.brand .divider{width:1px;height:22px;background:var(--line-strong);opacity:.25}
-.brand .app{font-weight:500;font-size:15px;color:var(--soft)}
+.brand .divider{width:1px;height:24px;background:var(--line-strong);opacity:.3}
+.brand .app{font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--fg);letter-spacing:-.01em}
 .viewnav{display:flex;gap:4px}
 .viewnav button{min-height:36px;padding:0 14px;border-radius:999px;border:0;background:transparent;color:var(--soft);font-size:14.5px;font-weight:500}
 .viewnav button[aria-current="true"]{background:var(--surface);color:var(--fg)}
 .importbtn{min-height:36px;padding:0 15px;border-radius:999px;border:1px solid var(--green);background:transparent;color:var(--green);font-size:14px;font-weight:600}
 .importbtn:hover{background:var(--hl)}
+.statsfilters{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;padding-top:20px}
+.statsfilters label{font-size:12.5px;color:var(--muted);display:inline-flex;align-items:center;gap:8px}
+.statsfilters select{min-height:36px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;font-size:13.5px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin:18px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.kpi-v{font-family:var(--font-display);font-weight:700;font-size:28px;line-height:1;font-variant-numeric:tabular-nums}
+.kpi-l{font-size:12.5px;color:var(--muted);margin-top:6px}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding-bottom:64px}
+.chartcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;min-width:0}
+.chartcard.wide{grid-column:1 / -1}
+.chartcard h4{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#86C9B3;margin-bottom:14px}
+.cwrap{position:relative;height:300px}
+@media (max-width:860px){.charts{grid-template-columns:1fr}}
 .topbar .spacer{flex:1}
 .userchip{display:inline-flex;align-items:center;gap:9px}
 .userchip .uava{width:30px;height:30px;border-radius:50%;object-fit:cover;background:var(--ph);display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--soft)}
@@ -293,6 +306,7 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
       </span>
       <nav class="viewnav" id="viewnav">
         <button data-view="requests" aria-current="true">Forespørsler</button>
+        <button data-view="stats" aria-current="false">Statistikk</button>
         <button data-view="settings" aria-current="false">Innstillinger</button>
       </nav>
       <button class="importbtn" id="importbtn">+ Importer</button>
@@ -326,6 +340,10 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
   <div class="gutter" id="viewSettings" hidden>
     <div class="settings" id="settingsBody"></div>
   </div>
+
+  <div class="gutter" id="viewStats" hidden>
+    <div id="statsBody"></div>
+  </div>
 </div>
 
 <div id="modalMount"></div>
@@ -333,6 +351,7 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 // ---------- Konfig (offentlig; anon-nøkkel er RLS-beskyttet) ----------
 const SUPABASE_URL = "https://wocrhuiyzrckxihqzrla.supabase.co";
@@ -466,7 +485,7 @@ function recommend(r){
 
 // ---------- Datahenting ----------
 async function loadData(){
-  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,locations,start_date,duration,start_iso,end_iso,assumed_product,customer_activity,customer_activity_signals,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
+  const sel = `id,subject,title,from_email,from_name,to_email,received_at,deadline,status,category,category_confidence,category_reasoning,category_overridden,total_score,domain,subarea,locations,start_date,duration,start_iso,end_iso,assumed_product,customer_activity,customer_activity_signals,opportunity_group_id,org_name,contact_name,pipedrive_org_id,relationship_level,relationship_signals,pipedrive_deal_id,rejection_reason,body_text,body_html,`
     + `attachments(filename,content_type,size_bytes,storage_path),`
     + `match_scores(score,reasoning,service_areas(key,name)),`
     + `consultant_matches(match_percent,reasoning,domain_level,domain_reasoning,consultants(id,name,title,company,location,years_experience,skills,keywords,certifications,summary,flowcase_user_id))`;
@@ -657,10 +676,95 @@ function renderSettings(){
     <div class="panel dedup"><div class="panel-hd"><h3>Dublettkontroll</h3><p>Samme forespørsel registreres aldri to ganger.</p></div>
       <div class="panel-bd"><ul><li>Unik på <b>Message-ID</b>.</li><li>Unik på <b>innhold-hash</b> (avsender + emne + tekst), også på tvers av kontoer.</li></ul></div></div>`;
 }
+let statsMonths=12, statsGroup="month", statsCat="alle", statsArea="alle", _charts=[];
+function destroyCharts(){ _charts.forEach(c=>{try{c.destroy();}catch(_){}}); _charts=[]; }
+function statsFiltered(){
+  const cutoff = statsMonths ? Date.now()-statsMonths*30.5*864e5 : 0;
+  return REQUESTS.filter(r=>{ const t=Date.parse(r.received_at||""); if(isNaN(t)) return false;
+    if(cutoff && t<cutoff) return false; if(statsCat!=="alle" && catOf(r)!==statsCat) return false; return true; });
+}
+function periodKey(t){
+  const dt=new Date(t);
+  if(statsGroup==="week"){
+    const dd=new Date(Date.UTC(dt.getFullYear(),dt.getMonth(),dt.getDate()));
+    const day=(dd.getUTCDay()+6)%7; dd.setUTCDate(dd.getUTCDate()-day+3);
+    const wk1=new Date(Date.UTC(dd.getUTCFullYear(),0,4));
+    const wk=1+Math.round(((dd-wk1)/864e5 - 3 + ((wk1.getUTCDay()+6)%7))/7);
+    return dd.getUTCFullYear()+"-u"+String(wk).padStart(2,"0");
+  }
+  return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0");
+}
+function statusBucket(r){ return r.status==="kvalifisert"?"kval":r.status==="avvist"?"avv":"open"; }
+function timeSeries(reqs){
+  const m=new Map();
+  for(const r of reqs){ const t=Date.parse(r.received_at||""); if(isNaN(t)) continue; const k=periodKey(t);
+    if(!m.has(k)) m.set(k,{kval:0,avv:0,open:0}); m.get(k)[statusBucket(r)]++; }
+  const keys=[...m.keys()].sort();
+  return {keys, kval:keys.map(k=>m.get(k).kval), avv:keys.map(k=>m.get(k).avv), open:keys.map(k=>m.get(k).open)};
+}
+function countBy(reqs, fn, limit){
+  const m=new Map(); for(const r of reqs){ const k=fn(r)||"(uspesifisert)"; m.set(k,(m.get(k)||0)+1); }
+  let ent=[...m.entries()].sort((a,b)=>b[1]-a[1]); if(limit) ent=ent.slice(0,limit);
+  return {labels:ent.map(e=>e[0]), data:ent.map(e=>e[1])};
+}
+function renderStats(){
+  const el=$("statsBody");
+  if(typeof Chart==="undefined"){ el.innerHTML='<div class="empty">Kunne ikke laste grafbibliotek (Chart.js). Sjekk nettverk.</div>'; return; }
+  Chart.defaults.color="#C9C1D4"; Chart.defaults.font.family="Inter, system-ui, sans-serif"; Chart.defaults.borderColor="rgba(244,237,228,.08)";
+  const areas=[...new Set(REQUESTS.map(r=>topArea(r).name).filter(x=>x&&x!=="—"))].sort();
+  const reqs=statsFiltered();
+  const total=reqs.length, kval=reqs.filter(r=>r.status==="kvalifisert").length, avv=reqs.filter(r=>r.status==="avvist").length;
+  const rate=(kval+avv)?Math.round(100*kval/(kval+avv)):0;
+  const avg=total?Math.round(reqs.reduce((s,r)=>s+(topArea(r).pct||0),0)/total):0;
+  el.innerHTML=`
+    <div class="statsfilters">
+      <label>Periode <select id="f-period">${[[3,"Siste 3 mnd"],[6,"Siste 6 mnd"],[12,"Siste 12 mnd"],[0,"Alt"]].map(([v,l])=>`<option value="${v}" ${statsMonths===v?"selected":""}>${l}</option>`).join("")}</select></label>
+      <label>Gruppering <select id="f-group">${[["month","Måned"],["week","Uke"]].map(([v,l])=>`<option value="${v}" ${statsGroup===v?"selected":""}>${l}</option>`).join("")}</select></label>
+      <label>Kategori <select id="f-cat">${[["alle","Alle"],["klar","Verifiserte"],["mulig","Mulige"]].map(([v,l])=>`<option value="${v}" ${statsCat===v?"selected":""}>${l}</option>`).join("")}</select></label>
+      <label>Tjenesteområde <select id="f-area"><option value="alle" ${statsArea==="alle"?"selected":""}>Alle</option>${areas.map(a=>`<option value="${esc(a)}" ${statsArea===a?"selected":""}>${esc(a)}</option>`).join("")}</select></label>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-v">${total}</div><div class="kpi-l">Forespørsler</div></div>
+      <div class="kpi"><div class="kpi-v txt-strong">${kval}</div><div class="kpi-l">Kvalifisert</div></div>
+      <div class="kpi"><div class="kpi-v txt-low">${avv}</div><div class="kpi-l">Avvist</div></div>
+      <div class="kpi"><div class="kpi-v">${rate}%</div><div class="kpi-l">Kvalifiseringsrate</div></div>
+      <div class="kpi"><div class="kpi-v">${avg}%</div><div class="kpi-l">Snitt matchscore</div></div>
+    </div>
+    <div class="charts">
+      <div class="chartcard wide"><h4>Forespørsler over tid</h4><div class="cwrap"><canvas id="c-time"></canvas></div></div>
+      <div class="chartcard wide"><h4>Kvalifiseringsrate over tid</h4><div class="cwrap"><canvas id="c-rate"></canvas></div></div>
+      <div class="chartcard"><h4>Per tjenesteområde</h4><div class="cwrap"><canvas id="c-area"></canvas></div></div>
+      <div class="chartcard"><h4>Underkategorier${statsArea!=="alle"?" – "+esc(statsArea):""}</h4><div class="cwrap"><canvas id="c-sub"></canvas></div></div>
+    </div>`;
+  ["f-period","f-group","f-cat","f-area"].forEach(id=>$(id).addEventListener("change",e=>{
+    const v=e.target.value;
+    if(id==="f-period") statsMonths=parseInt(v,10); else if(id==="f-group") statsGroup=v; else if(id==="f-cat") statsCat=v; else statsArea=v;
+    renderStats();
+  }));
+  destroyCharts();
+  const ts=timeSeries(reqs), C={kval:"#4BC2A2",avv:"#D28C8C",open:"#8fd0f0",bar:"#938BCB"};
+  const g={grid:{color:"rgba(244,237,228,.07)"}};
+  _charts.push(new Chart($("c-time"),{type:"bar",data:{labels:ts.keys,datasets:[
+    {label:"Kvalifisert",data:ts.kval,backgroundColor:C.kval},{label:"Avvist",data:ts.avv,backgroundColor:C.avv},{label:"Åpne",data:ts.open,backgroundColor:C.open}]},
+    options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true,...g},y:{stacked:true,beginAtZero:true,...g}},plugins:{legend:{position:"bottom"}}}}));
+  const rateS=ts.keys.map((k,i)=>{const d=ts.kval[i]+ts.avv[i];return d?Math.round(100*ts.kval[i]/d):null;});
+  _charts.push(new Chart($("c-rate"),{type:"line",data:{labels:ts.keys,datasets:[{label:"Rate %",data:rateS,borderColor:C.kval,backgroundColor:"rgba(75,194,162,.15)",tension:.3,spanGaps:true,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,scales:{x:g,y:{beginAtZero:true,max:100,...g}},plugins:{legend:{display:false}}}}));
+  const ab=countBy(reqs,r=>topArea(r).name);
+  _charts.push(new Chart($("c-area"),{type:"bar",data:{labels:ab.labels,datasets:[{data:ab.data,backgroundColor:C.bar}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,scales:{x:{beginAtZero:true,...g},y:g},plugins:{legend:{display:false}}}}));
+  const subReqs = statsArea==="alle"?reqs:reqs.filter(r=>topArea(r).name===statsArea);
+  const sbd=countBy(subReqs,r=>r.subarea,15);
+  _charts.push(new Chart($("c-sub"),{type:"bar",data:{labels:sbd.labels,datasets:[{data:sbd.data,backgroundColor:C.kval}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,scales:{x:{beginAtZero:true,...g},y:g},plugins:{legend:{display:false}}}}));
+}
 function render(){
+  if(view!=="stats") destroyCharts();
   document.querySelectorAll("#viewnav button").forEach(b=>b.setAttribute("aria-current", String(b.dataset.view===view)));
-  $("viewRequests").hidden = view!=="requests"; $("viewSettings").hidden = view!=="settings";
-  if(view==="requests"){ renderCat(); renderLoc(); renderTabs(); renderList(); renderDetail(); } else renderSettings();
+  $("viewRequests").hidden = view!=="requests"; $("viewSettings").hidden = view!=="settings"; $("viewStats").hidden = view!=="stats";
+  if(view==="requests"){ renderCat(); renderLoc(); renderTabs(); renderList(); renderDetail(); }
+  else if(view==="stats"){ renderStats(); }
+  else renderSettings();
 }
 
 // ---------- Handlinger ----------
