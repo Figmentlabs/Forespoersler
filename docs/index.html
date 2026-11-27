@@ -638,7 +638,7 @@ function renderDetail(){
       <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
       <div class="kv"><span>Fra <b>${esc(r.from_email||"")}</b></span><span>Til <b>${esc(r.to_email||"")}</b></span>
         <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${locsOf(r).length?`<span>Lokasjon <b>${esc(locsOf(r).join(" / "))}</b></span>`:""}${r.start_date?`<span>Oppstart <b>${esc(r.start_date)}</b></span>`:""}${r.end_iso?`<span>Sluttdato <b>${esc(r.end_iso)}</b></span>`:""}${r.duration?`<span>Varighet <b>${esc(r.duration)}</b></span>`:""}${r.assumed_product?`<span>Antatt produkt <b>${esc(r.assumed_product)}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div>${catHtml}</div>
-    <div class="section actionbar">${actionHtml}<button class="btn btn-ghost btn-sm" data-act="share-slack">Del på Slack</button></div>
+    <div class="section actionbar">${actionHtml}<button class="btn btn-ghost btn-sm" data-act="copy-link">Kopier lenke</button><button class="btn btn-ghost btn-sm" data-act="share-slack">Del på Slack</button></div>
     <div class="recbanner" style="--rcol:${rm.col}"><div class="recmain"><div class="recverdict">Anbefalt: ${rm.label}</div><div class="recwhy">${esc(rec.why)}</div></div><div class="recfactors">${facHtml}</div></div>
     ${orgSection}
     ${sameOppHtml}
@@ -1074,7 +1074,8 @@ $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-ac
   if(b.dataset.act==="reject-group") rejectModal(nyMembers(r));
   if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r);
   if(b.dataset.act==="unqualify") doUnqualify(r);
-  if(b.dataset.act==="share-slack") shareSlackModal(r); });
+  if(b.dataset.act==="share-slack") shareSlackModal(r);
+  if(b.dataset.act==="copy-link"){ const u=location.origin+location.pathname+"?req="+encodeURIComponent(r.id); (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>toast("Lenke kopiert")).catch(()=>{ window.prompt("Kopier lenke til forespørselen:", u); }); } });
 $("modalMount").addEventListener("click",e=>{
   if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
   const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }
