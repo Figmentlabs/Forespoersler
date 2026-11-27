@@ -383,7 +383,7 @@ const dealUrl = id => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${encodeUR
 
 let REQUESTS = [], USERS = [], DOMAINS = [], CONSULTS = [], SKIPPED = [], pendingToast = null;
 let pendingCvPath = null;
-let view="requests", filter="ny", selCat="klar", selLoc=new Set(), selectedId=null, me=null;
+let view="requests", filter="ny", selCat="klar", selLoc=new Set(), selectedId=null, me=null, pendingReq=null;
 const CATLABEL = {klar:"Verifiserte forespørsler", mulig:"Mulige forespørsler"};
 
 const $ = id => document.getElementById(id);
@@ -638,7 +638,7 @@ function renderDetail(){
       <span class="chip ${r.status}">${STATUS_LABELS[r.status]||r.status}</span></div>
       <div class="kv"><span>Fra <b>${esc(r.from_email||"")}</b></span><span>Til <b>${esc(r.to_email||"")}</b></span>
         <span>Mottatt <b>${esc((r.received_at||"").slice(0,16).replace("T"," "))}</b></span>${r.deadline?`<span>Frist <b>${esc(r.deadline)}</b></span>`:""}${locsOf(r).length?`<span>Lokasjon <b>${esc(locsOf(r).join(" / "))}</b></span>`:""}${r.start_date?`<span>Oppstart <b>${esc(r.start_date)}</b></span>`:""}${r.end_iso?`<span>Sluttdato <b>${esc(r.end_iso)}</b></span>`:""}${r.duration?`<span>Varighet <b>${esc(r.duration)}</b></span>`:""}${r.assumed_product?`<span>Antatt produkt <b>${esc(r.assumed_product)}</b></span>`:""}${r.domain?`<span>Domene <b>${esc(r.domain)}</b></span>`:""}${r.subject?`<span>Emne <b>${esc(r.subject)}</b></span>`:""}</div>${catHtml}</div>
-    <div class="section actionbar">${actionHtml}</div>
+    <div class="section actionbar">${actionHtml}<button class="btn btn-ghost btn-sm" data-act="share-slack">Del på Slack</button></div>
     <div class="recbanner" style="--rcol:${rm.col}"><div class="recmain"><div class="recverdict">Anbefalt: ${rm.label}</div><div class="recwhy">${esc(rec.why)}</div></div><div class="recfactors">${facHtml}</div></div>
     ${orgSection}
     ${sameOppHtml}
@@ -852,6 +852,56 @@ async function doReject(ids, reason){
     toast(ids.length>1?`Avviste ${ids.length} forespørsler`:"Forespørsel avvist"); closeModal(); await loadData(); }
   catch(e){ toast("Avvisning feilet: "+e.message); }
 }
+// ---------- Del på Slack ----------
+let __slackChannels=null;
+function slackSummary(r){
+  const ta=topArea(r), rec=recommend(r);
+  return {
+    request_id:r.id,
+    title:r.title||r.subject||"(uten emne)",
+    customer:r.org_name||"",
+    area:ta.name||"", areaPct:ta.pct,
+    recommendation:(REC[rec.verdict]?.label)||"",
+    status:STATUS_LABELS[r.status]||r.status,
+    location:locsOf(r).join(" / "),
+    start:r.start_date||"", duration:r.duration||"", product:r.assumed_product||"",
+    url:location.origin+location.pathname+"?req="+encodeURIComponent(r.id),
+  };
+}
+function shareSlackModal(r){
+  const sum=slackSummary(r);
+  $("modalMount").innerHTML=`<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-hd"><h3>Del på Slack</h3></div>
+    <div class="modal-bd">
+      <p class="muted-note">«${esc(sum.title)}»${sum.customer?` · ${esc(sum.customer)}`:""} deles til valgt kanal, med lenke rett til forespørselen.</p>
+      <div class="field"><label for="slk-ch">Kanal</label><select id="slk-ch"><option value="">Laster kanaler …</option></select></div>
+      <div class="field"><label for="slk-note">Kommentar (valgfritt)</label><textarea id="slk-note" placeholder="F.eks. «Noen ledige på denne?»"></textarea></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-ghost" data-act="cancel">Avbryt</button><button class="btn btn-primary" data-act="do-share-slack" data-rid="${r.id}" disabled>Del</button></div></div></div>`;
+  loadSlackChannels();
+}
+async function loadSlackChannels(){
+  const sel=$("slk-ch"), btn=document.querySelector('[data-act="do-share-slack"]');
+  try{
+    if(!__slackChannels){ const out=await callFn("slack-channels",{}); __slackChannels=out.channels||[]; }
+    if(!__slackChannels.length){ sel.innerHTML='<option value="">Ingen kanaler funnet</option>'; return; }
+    sel.innerHTML=__slackChannels.map(c=>`<option value="${esc(c.id)}">#${esc(c.name)}</option>`).join("");
+    if(btn) btn.disabled=false;
+  }catch(e){ if(sel) sel.innerHTML='<option value="">Kunne ikke hente kanaler</option>'; toast("Slack: "+e.message); }
+}
+async function doShareSlack(rid){
+  const r=REQUESTS.find(x=>x.id===rid); if(!r) return;
+  const ch=$("slk-ch")?.value; if(!ch){ toast("Velg en kanal"); return; }
+  const note=($("slk-note")?.value||"").trim();
+  const btn=document.querySelector('[data-act="do-share-slack"]'); if(btn){ btn.disabled=true; btn.textContent="Deler …"; }
+  try{ await callFn("share-to-slack", { channel:ch, note, ...slackSummary(r) }); closeModal(); toast("Delt på Slack"); }
+  catch(e){ toast("Deling feilet: "+e.message); if(btn){ btn.disabled=false; btn.textContent="Del"; } }
+}
+function openRequestById(id){
+  const r=REQUESTS.find(x=>x.id===id);
+  if(!r){ toast("Fant ikke den delte forespørselen"); return; }
+  view="requests"; selCat=catOf(r); filter="alle"; selectedId=id; render();
+}
 function qualifyChooseModal(members){
   $("modalMount").innerHTML=`<div class="scrim" data-scrim><div class="modal" role="dialog" aria-modal="true">
     <div class="modal-hd"><h3>Velg leverandør</h3></div>
@@ -1023,13 +1073,15 @@ $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-ac
   if(b.dataset.act==="qualify-group") qualifyChooseModal(nyMembers(r));
   if(b.dataset.act==="reject-group") rejectModal(nyMembers(r));
   if(b.dataset.act==="movecat") doMoveCat(r); if(b.dataset.act==="reopen") doReopen(r);
-  if(b.dataset.act==="unqualify") doUnqualify(r); });
+  if(b.dataset.act==="unqualify") doUnqualify(r);
+  if(b.dataset.act==="share-slack") shareSlackModal(r); });
 $("modalMount").addEventListener("click",e=>{
   if(e.target.matches("[data-scrim]")||e.target.closest('[data-act="cancel"]')){ closeModal(); return; }
   const sc=e.target.closest('[data-act="save-con"]'); if(sc){ saveConsultant(sc.dataset.id||null); return; }
   const pb=e.target.closest('[data-act="pick-broker"]'); if(pb){ pendingGroupBroker=pb.dataset.rid; qualifyConsultantModal(REQUESTS.find(x=>x.id===pb.dataset.rid), true); return; }
   const pc=e.target.closest('[data-act="pick-consultant"]'); if(pc){ const cid=pc.dataset.cid||""; if(pc.dataset.group==="1"){ doQualifyGroup(pendingGroupBroker, cid); } else { doQualify(REQUESTS.find(x=>x.id===pc.dataset.rid), cid); } return; }
   if(e.target.closest('[data-act="do-import"]')){ doImport(); return; }
+  const sh=e.target.closest('[data-act="do-share-slack"]'); if(sh){ doShareSlack(sh.dataset.rid); return; }
   if(e.target.closest('[data-act="confirm-reject"]')){ const t=$("rr"); doReject(pendingReject, (t&&t.value.trim())||""); }});
 $("modalMount").addEventListener("change",e=>{ if(e.target.id==="cv-file") onCvFile(e.target); });
 $("viewSettings").addEventListener("click",async e=>{ const b=e.target.closest("[data-act]"); if(!b) return;
@@ -1072,6 +1124,7 @@ async function handleSession(session){
   try{ await sb.from("app_users").upsert({ id: me.id, email: me.email, name: me.user_metadata?.full_name || null, last_seen: new Date().toISOString() }, { onConflict: "id" }); }catch(_){}
   await loadData();
   startAutoRefresh();
+  if(pendingReq){ openRequestById(pendingReq); pendingReq=null; }
   if(pendingToast){ toast(pendingToast); pendingToast=null; }
 }
 function urlAuthError(){
@@ -1095,6 +1148,7 @@ async function init(){
   if(ae){ try{ history.replaceState(null,"",location.pathname); }catch(_){}; showGate("error", ae); return; }
   const gp=new URLSearchParams(location.search||"");
   if(gp.get("gmail")){ const st=gp.get("gmail"), msg=gp.get("msg"); pendingToast = st==="connected" ? "Gmail koblet til" : ("Gmail-kobling feilet"+(msg?": "+msg:"")); try{ history.replaceState(null,"",location.pathname); }catch(_){} }
+  if(gp.get("req")){ pendingReq=gp.get("req"); try{ history.replaceState(null,"",location.pathname); }catch(_){} }
   sb.auth.onAuthStateChange((evt, session)=>{
     if(session) showFor(session);
     else if(evt==="SIGNED_OUT"){ authShown=false; me=null; showGate("out"); }
