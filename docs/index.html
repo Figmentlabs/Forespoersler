@@ -505,7 +505,7 @@ async function loadData(){
 function afterLocation(){ if(!selLoc.size) return REQUESTS.slice(); return REQUESTS.filter(r=>locsOf(r).some(l=>selLoc.has(l))); }
 function catOf(r){ return r.category||"mulig"; }
 function afterCategory(){ return afterLocation().filter(r=>catOf(r)===selCat); }
-function catCounts(){ const b=afterLocation(); let klar=0,mulig=0; b.forEach(r=>{catOf(r)==="klar"?klar++:mulig++}); return {klar,mulig}; }
+function catCounts(){ const b=afterLocation().filter(r=>r.status==="ny"); let klar=0,mulig=0; b.forEach(r=>{catOf(r)==="klar"?klar++:mulig++}); return {klar,mulig}; }
 function counts(){ const b=afterCategory(); const c={ny:0,kvalifisert:0,avvist:0,feil:0,alle:b.length}; b.forEach(r=>{c[r.status]=(c[r.status]||0)+1}); return c; }
 function recTime(r){ const t=Date.parse(r.received_at||""); return isNaN(t)?0:t; }
 function visible(){ let rs=afterCategory(); if(filter!=="alle") rs=rs.filter(r=>r.status===filter); return rs.sort((a,b)=>recTime(b)-recTime(a)); }
@@ -796,6 +796,26 @@ async function disconnectGmail(){
   try{ await callFn("gmail-disconnect", {}); toast("Gmail koblet fra"); await loadData(); }
   catch(e){ toast("Kunne ikke koble fra: "+e.message); }
 }
+
+// ---------- Auto-oppdatering ----------
+let __refreshTimer=null, __autoRefreshStarted=false;
+function refreshSoon(){
+  if(document.hidden) return;
+  const mm=$("modalMount"); if(mm && mm.childElementCount>0) return; // ikke forstyrr en åpen dialog
+  clearTimeout(__refreshTimer);
+  __refreshTimer=setTimeout(()=>{ loadData().catch(()=>{}); }, 1200); // samle flere endringer til én oppdatering
+}
+function startAutoRefresh(){
+  if(__autoRefreshStarted) return; __autoRefreshStarted=true;
+  // Realtime: oppdater straks når en forespørsel kommer inn / endres
+  try{ sb.channel("rt-requests")
+        .on("postgres_changes",{event:"*",schema:"public",table:"requests"}, refreshSoon)
+        .subscribe(); }catch(_){}
+  // Fallback hvis realtime-tilkoblingen faller ut
+  setInterval(()=>{ if(!document.hidden) refreshSoon(); }, 45000);
+  // Hent ferskt når brukeren kommer tilbake til fanen
+  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) refreshSoon(); });
+}
 let pendingGroupBroker=null;
 function qualifyConsultantModal(r, isGroup){
   const cs=consSorted(r), oppCities=new Set(cityList(r).map(c=>c.toLowerCase()));
@@ -1051,6 +1071,7 @@ async function handleSession(session){
   me = session.user; showApp();
   try{ await sb.from("app_users").upsert({ id: me.id, email: me.email, name: me.user_metadata?.full_name || null, last_seen: new Date().toISOString() }, { onConflict: "id" }); }catch(_){}
   await loadData();
+  startAutoRefresh();
   if(pendingToast){ toast(pendingToast); pendingToast=null; }
 }
 function urlAuthError(){
