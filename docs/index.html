@@ -231,6 +231,12 @@ button.item[aria-current="true"]{border-color:var(--green);box-shadow:0 0 0 1px 
 .panel-hd p{font-size:13.5px;color:var(--muted);margin-top:4px}
 .panel-bd{padding:10px 24px 22px}
 .row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.archcard .arch-input{width:100%;box-sizing:border-box;min-height:40px;padding:0 14px;margin:4px 0 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;font-size:14px}
+.arch-results{display:flex;flex-direction:column;max-height:420px;overflow:auto}
+.arch-results .s{font-size:12.5px;color:var(--muted);margin-top:3px}
+.arch-row{display:block;width:100%;text-align:left;cursor:pointer;background:none;border:none;border-top:1px solid var(--line);padding:11px 2px;color:var(--fg);font:inherit}
+.arch-row:hover{background:rgba(147,139,203,.1)}
+.arch-row .t{font-size:14px;font-weight:600}
 .row:first-child{border-top:0}
 .row .main{min-width:0}
 .row .t{font-weight:600;font-size:14.5px}
@@ -502,7 +508,10 @@ async function loadData(){
   render();
 }
 
-function afterLocation(){ if(!selLoc.size) return REQUESTS.slice(); return REQUESTS.filter(r=>locsOf(r).some(l=>selLoc.has(l))); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function isExpired(r){ const e=(r.end_iso||"").slice(0,10); return !!e && e < todayISO(); }
+function liveRequests(){ return REQUESTS.filter(r=>!isExpired(r)); }
+function afterLocation(){ const base=liveRequests(); if(!selLoc.size) return base; return base.filter(r=>locsOf(r).some(l=>selLoc.has(l))); }
 function catOf(r){ return r.category||"mulig"; }
 function afterCategory(){ return afterLocation().filter(r=>catOf(r)===selCat); }
 function catCounts(){ const b=afterLocation().filter(r=>r.status==="ny"); let klar=0,mulig=0; b.forEach(r=>{catOf(r)==="klar"?klar++:mulig++}); return {klar,mulig}; }
@@ -683,7 +692,7 @@ function renderSettings(){
     <div class="panel dedup"><div class="panel-hd"><h3>Dublettkontroll</h3><p>Samme forespørsel registreres aldri to ganger.</p></div>
       <div class="panel-bd"><ul><li>Unik på <b>Message-ID</b>.</li><li>Unik på <b>innhold-hash</b> (avsender + emne + tekst), også på tvers av kontoer.</li></ul></div></div>`;
 }
-let statsMonths=12, statsGroup="month", statsCat="alle", statsArea="alle", _charts=[];
+let statsMonths=12, statsGroup="month", statsCat="alle", statsArea="alle", statsArchiveQ="", _charts=[];
 function destroyCharts(){ _charts.forEach(c=>{try{c.destroy();}catch(_){}}); _charts=[]; }
 function statsFiltered(){
   const cutoff = statsMonths ? Date.now()-statsMonths*30.5*864e5 : 0;
@@ -714,6 +723,24 @@ function countBy(reqs, fn, limit){
   let ent=[...m.entries()].sort((a,b)=>b[1]-a[1]); if(limit) ent=ent.slice(0,limit);
   return {labels:ent.map(e=>e[0]), data:ent.map(e=>e[1])};
 }
+function archMatches(q){
+  q=(q||"").trim().toLowerCase();
+  let rs=REQUESTS.filter(isExpired);
+  if(q){ const terms=q.split(/\s+/).filter(Boolean);
+    rs=rs.filter(r=>{ const hay=[r.subject,r.title,r.org_name,r.contact_name,r.from_email,r.from_name,r.subarea,r.assumed_product,(locsOf(r)||[]).join(" "),topArea(r).name,r.rejection_reason,r.body_text].filter(Boolean).join(" ").toLowerCase();
+      return terms.every(t=>hay.includes(t)); }); }
+  return rs.sort((a,b)=>recTime(b)-recTime(a));
+}
+function renderArchive(){
+  const box=$("arch-results"); if(!box) return;
+  const rs=archMatches(statsArchiveQ);
+  if(!rs.length){ box.innerHTML=`<div class="row"><div class="s">${statsArchiveQ?"Ingen utgåtte forespørsler matcher søket.":"Ingen utgåtte forespørsler ennå."}</div></div>`; return; }
+  box.innerHTML=rs.map(r=>{ const ta=topArea(r), st=STATUS_LABELS[r.status]||r.status;
+    return `<button class="arch-row" data-act="open-arch" data-rid="${esc(r.id)}">
+      <div class="t">${esc(r.title||r.subject||"(uten emne)")}</div>
+      <div class="s">${esc([r.org_name||r.from_email,ta.name,st].filter(Boolean).join(" · "))}${r.end_iso?` · utløp ${esc((r.end_iso||"").slice(0,10))}`:""} · mottatt ${esc((r.received_at||"").slice(0,10))}</div>
+    </button>`; }).join("");
+}
 function renderStats(){
   const el=$("statsBody");
   if(typeof Chart==="undefined"){ el.innerHTML='<div class="empty">Kunne ikke laste grafbibliotek (Chart.js). Sjekk nettverk.</div>'; return; }
@@ -742,12 +769,17 @@ function renderStats(){
       <div class="chartcard wide"><h4>Kvalifiseringsrate over tid</h4><div class="cwrap"><canvas id="c-rate"></canvas></div></div>
       <div class="chartcard"><h4>Per tjenesteområde</h4><div class="cwrap"><canvas id="c-area"></canvas></div></div>
       <div class="chartcard"><h4>Underkategorier${statsArea!=="alle"?" – "+esc(statsArea):""}</h4><div class="cwrap"><canvas id="c-sub"></canvas></div></div>
-    </div>`;
+    </div>
+    <div class="chartcard wide archcard"><h4>Arkivsøk – utgåtte forespørsler</h4>
+      <input id="arch-q" class="arch-input" type="search" placeholder="Fritekstsøk i utgåtte forespørsler …" value="${esc(statsArchiveQ)}">
+      <div id="arch-results" class="arch-results"></div></div>`;
   ["f-period","f-group","f-cat","f-area"].forEach(id=>$(id).addEventListener("change",e=>{
     const v=e.target.value;
     if(id==="f-period") statsMonths=parseInt(v,10); else if(id==="f-group") statsGroup=v; else if(id==="f-cat") statsCat=v; else statsArea=v;
     renderStats();
   }));
+  const aq=$("arch-q"); if(aq) aq.addEventListener("input",e=>{ statsArchiveQ=e.target.value; renderArchive(); });
+  renderArchive();
   destroyCharts();
   const ts=timeSeries(reqs), C={kval:"#4BC2A2",avv:"#D28C8C",open:"#8fd0f0",bar:"#938BCB"};
   const g={grid:{color:"rgba(244,237,228,.07)"}};
@@ -1066,6 +1098,7 @@ $("locchips").addEventListener("click",e=>{ const b=e.target.closest("[data-loc]
 $("locclear").addEventListener("click",()=>{ selLoc.clear(); render(); });
 $("tabs").addEventListener("click",e=>{ const b=e.target.closest("[data-f]"); if(b){ filter=b.dataset.f; selectedId=visible()[0]?.id||null; render(); }});
 $("list").addEventListener("click",e=>{ const b=e.target.closest("[data-id]"); if(b){ selectedId=b.dataset.id; render(); if(window.matchMedia("(max-width:860px)").matches) $("detailWrap").scrollIntoView({behavior:"smooth"}); }});
+$("statsBody").addEventListener("click",e=>{ const b=e.target.closest('[data-act="open-arch"]'); if(b) openRequestById(b.dataset.rid); });
 $("detailWrap").addEventListener("click",e=>{ const b=e.target.closest("[data-act]"); if(!b) return; const r=REQUESTS.find(x=>x.id===selectedId); if(!r) return; if(b.dataset.act==="selectreq"){ selectedId=b.dataset.rid; render(); return; }
   if(b.dataset.act==="openatt"){ openAttachment(b.dataset.path, b.dataset.name); return; }
   if(b.dataset.act==="copy-fid"){ try{ navigator.clipboard.writeText(b.dataset.fid); toast("Flowcase-ID kopiert"); }catch(_){ toast("Kunne ikke kopiere"); } return; }
