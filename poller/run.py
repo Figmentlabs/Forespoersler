@@ -73,6 +73,18 @@ def domain_of(email: str | None) -> str:
     return email.rsplit("@", 1)[1].strip().lower()
 
 
+def domain_monitored(dom: str, domains) -> bool:
+    """True hvis avsenderdomenet er overvåket – eksakt ELLER et subdomene av et
+    overvåket domene. Et domene som ligger i filteret det polles på (inkl.
+    subdomener som varsling@mail.emagine.no) skal aldri blokkeres."""
+    if not dom:
+        return False
+    for m in domains:
+        if dom == m or dom.endswith("." + m):
+            return True
+    return False
+
+
 def _store_request(store: Store, mail: ParsedEmail, chash: str, account_id: str | None) -> str | None:
     payload = {
         "message_id": mail.message_id,
@@ -193,7 +205,7 @@ def process_account(
             log.warning("[%s] kunne ikke parse UID %s: %s", acc.email, msg.uid, exc)
             continue
 
-        if cfg.filter_domains and domains and domain_of(mail.from_email) not in domains:
+        if cfg.filter_domains and domains and not domain_monitored(domain_of(mail.from_email), domains):
             log.info("[%s] hopper over ikke-overvåket avsender: %s", acc.email, mail.from_email)
             store.record_skipped(domain_of(mail.from_email), mail.from_email, mail.subject)
             continue
@@ -251,7 +263,7 @@ def process_gmail(
             log.warning("[gmail:%s] kunne ikke hente/parse %s: %s", email, mid, exc)
             continue
 
-        if cfg.filter_domains and domains and domain_of(mail.from_email) not in domains:
+        if cfg.filter_domains and domains and not domain_monitored(domain_of(mail.from_email), domains):
             store.record_skipped(domain_of(mail.from_email), mail.from_email, mail.subject)
             continue
 

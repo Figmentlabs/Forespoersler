@@ -660,8 +660,9 @@ function renderSettings(){
       <div class="right"><span class="statusdot">${u.gmail_connected?"Gmail koblet":"Ingen Gmail"}</span></div></div>`).join("") || '<div class="row"><div class="s">Ingen registrerte brukere ennå.</div></div>';
   const domRows = DOMAINS.map(d=>`<div class="row"><div class="main"><div class="t">${esc(d.domain)}</div><div class="s">${esc(d.label||"—")}</div></div>
       <div class="right"><button class="x" data-act="rm-domain" data-id="${d.id}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen domener ennå.</div></div>';
-  const monitored = new Set(DOMAINS.map(d=>(d.domain||"").toLowerCase()));
-  const skipRows = SKIPPED.filter(s=>!monitored.has((s.domain||"").toLowerCase())).map(s=>`<div class="row"><div class="main"><div class="t">${esc(s.domain)}</div><div class="s">${esc(s.example_from||"")}${s.times_seen?` · sett ${s.times_seen}×`:""}${s.example_subject?` · «${esc((s.example_subject||"").slice(0,44))}»`:""}</div></div>
+  const monDoms = DOMAINS.map(d=>(d.domain||"").toLowerCase()).filter(Boolean);
+  const isMonitored = dm => { dm=(dm||"").toLowerCase(); return monDoms.some(m=>dm===m||dm.endsWith("."+m)); };
+  const skipRows = SKIPPED.filter(s=>!isMonitored(s.domain)).map(s=>`<div class="row"><div class="main"><div class="t">${esc(s.domain)}</div><div class="s">${esc(s.example_from||"")}${s.times_seen?` · sett ${s.times_seen}×`:""}${s.example_subject?` · «${esc((s.example_subject||"").slice(0,44))}»`:""}</div></div>
       <div class="right"><button class="btn btn-ghost btn-sm" data-act="add-skipped" data-domain="${esc(s.domain)}">Legg til</button><button class="x" data-act="dismiss-skipped" data-domain="${esc(s.domain)}" aria-label="Fjern">×</button></div></div>`).join("") || '<div class="row"><div class="s">Ingen filtrerte avsendere registrert ennå.</div></div>';
   $("settingsBody").innerHTML = `
     <div class="panel"><div class="panel-hd"><h3>Din Gmail-postkasse</h3><p>Koble din egen Gmail så forespørsler fra brokerne plukkes opp automatisk. Kun lesetilgang – vi sender eller sletter aldri e-post.</p></div>
